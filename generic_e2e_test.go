@@ -134,12 +134,10 @@ func TestClose_Concurrent(t *testing.T) {
 	connectToTarget(t, gs)
 
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ { // simulate 100 concurrent calls
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 100 { // simulate 100 concurrent calls
+		wg.Go(func() {
 			_ = gs.Close()
-		}()
+		})
 	}
 
 	wg.Wait()

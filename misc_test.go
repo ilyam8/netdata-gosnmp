@@ -86,7 +86,7 @@ func TestPartition(t *testing.T) {
 // ---------------------------------------------------------------------
 
 var testsToBigInt = []struct {
-	in       interface{}
+	in       any
 	expected *big.Int
 }{
 	{int8(-42), big.NewInt(-42)},
