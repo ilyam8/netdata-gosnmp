@@ -100,7 +100,7 @@ func BenchmarkEncode(b *testing.B) {
 		{"kyoceraResponse", response},
 		{"v1Trap", &SnmpPacket{
 			Version: Version1, Community: "public", PDUType: Trap, Variables: slices.Clone(response.Variables),
-			SnmpTrap: SnmpTrap{Enterprise: ".1.3.6.1.4.1.20372", AgentAddress: "192.0.2.1", GenericTrap: 6, SpecificTrap: 1},
+			Enterprise: ".1.3.6.1.4.1.20372", AgentAddress: "192.0.2.1", GenericTrap: 6, SpecificTrap: 1,
 		}},
 		{"v3NoAuthGetRequest10", v3Request(NoAuthNoPriv, NoAuth)},
 		{"v3AuthSHAGetRequest10", v3Request(AuthNoPriv, SHA)},
