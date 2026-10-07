@@ -212,7 +212,7 @@ func savePcap(t *testing.T, fp string, exp, got []byte) {
 }
 
 // TestDecodeRecorded decodes the recorded net-snmp packets and compares the
-// complete result with the PDU each one was made from.
+// decoded header fields and varbinds with the PDU each one was made from.
 func TestDecodeRecorded(t *testing.T) {
 	type decoded struct {
 		Version    gosnmp.SnmpVersion

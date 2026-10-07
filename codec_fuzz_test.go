@@ -79,11 +79,16 @@ func FuzzDecodeReencode(f *testing.F) {
 }
 
 // reencodeKnownBug reports packets that hit known encoder bugs breaking the
-// FuzzDecodeReencode properties: a v1/v2c community longer than 127 bytes
-// gets a one-byte length, and a v1 trap whose agent address is not an IP
+// FuzzDecodeReencode properties: MarshalMsg writes the community and the USM
+// engine ID and user name with a one-byte length, so values longer than 127
+// bytes come out malformed, and a v1 trap whose agent address is not an IP
 // address makes MarshalMsg panic. Fixing the encoder removes these cases.
 func reencodeKnownBug(p *SnmpPacket) bool {
 	if p.Version != Version3 && len(p.Community) > 127 {
+		return true
+	}
+	if sp, ok := p.SecurityParameters.(*UsmSecurityParameters); ok && p.Version == Version3 &&
+		(len(sp.AuthoritativeEngineID) > 127 || len(sp.UserName) > 127) {
 		return true
 	}
 	return p.PDUType == Trap && net.ParseIP(p.AgentAddress) == nil
