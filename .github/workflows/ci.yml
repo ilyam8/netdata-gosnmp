@@ -227,3 +227,5 @@ jobs:
           go-version: 1.27.x
       - name: Fuzz Unmarshal
         run: go test -fuzztime 60s -v -run '^FuzzUnmarshal$' -fuzz '^FuzzUnmarshal$'
+      - name: Fuzz DecodeReencode
+        run: go test -fuzztime 60s -v -run '^FuzzDecodeReencode$' -fuzz '^FuzzDecodeReencode$'
