@@ -1,4 +1,4 @@
-module github.com/gosnmp/gosnmp
+module github.com/netdata/gosnmp
 
 go 1.24.0
 
