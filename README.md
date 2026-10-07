@@ -235,19 +235,13 @@ export GOSNMP_TARGET_IPV4=1.2.3.4
 export GOSNMP_PORT_IPV4=161
 export GOSNMP_TARGET_IPV6='0:0:0:0:0:ffff:102:304'
 export GOSNMP_PORT_IPV6=161
-go test -v -tags all        # for example
-go test -v -tags helper     # for example
+go test -v -tags end2end ./...
 ```
 
-Tests are grouped as follows:
-
-* Unit tests (validating data packing and marshalling):
-   * `marshal_test.go`
-   * `misc_test.go`
-* Public API consistency tests:
-   * `gosnmp_api_test.go`
-* End-to-end integration tests:
-   * `generic_e2e_test.go`
+`go test ./...` runs all unit tests, including the public API consistency tests in
+`gosnmp_api_test.go`. The end-to-end integration tests in `generic_e2e_test.go` need a
+running SNMP agent and the environment variables above, so they only build with the
+`end2end` build tag.
 
 The generic end-to-end integration test `generic_e2e_test.go` should
 work against any SNMP MIB-2 compliant host (e.g. a router, NAS box, printer).
@@ -286,7 +280,7 @@ To measure the performance of password hash caching:
 
 Password hash caching can be disabled during benchmark tests by using the golang build tag "gosnmp_nopwdcache", so:
 ```
-go build -tags gosnmp_nopwdcache -bench=Benchmark.*Hash
+go test -tags gosnmp_nopwdcache -run '^$' -bench 'Benchmark.*Hash'
 ```
 will benchmark the code without password hash caching. Removing the tag will run the benchmark with caching enabled (default behavior of package).
 

@@ -2,8 +2,6 @@
 // source code is governed by a BSD-style license that can be found in the
 // LICENSE file.
 
-//go:build all || misc
-
 package gosnmp
 
 import (
@@ -11,7 +9,6 @@ import (
 	"crypto"
 	_ "crypto/md5"
 	_ "crypto/sha1"
-	"errors"
 	"math"
 	"math/big"
 	"reflect"
@@ -211,23 +208,5 @@ func TestMarshalTimeticks(t *testing.T) {
 	}
 }
 */
-
-// parseBitString parses an ASN.1 bit string from the given byte slice and returns it.
-func parseBitString(bytes []byte) (ret BitStringValue, err error) {
-	if len(bytes) == 0 {
-		err = errors.New("zero length BIT STRING")
-		return ret, err
-	}
-	paddingBits := int(bytes[0])
-	if paddingBits > 7 ||
-		len(bytes) == 1 && paddingBits > 0 ||
-		bytes[len(bytes)-1]&((1<<bytes[0])-1) != 0 {
-		err = errors.New("invalid padding bits in BIT STRING")
-		return ret, err
-	}
-	ret.BitLength = (len(bytes)-1)*8 - paddingBits
-	ret.Bytes = bytes[1:]
-	return ret, err
-}
 
 // ---------------------------------------------------------------------

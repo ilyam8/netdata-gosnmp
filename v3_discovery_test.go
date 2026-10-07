@@ -2,8 +2,6 @@
 // source code is governed by a BSD-style license that can be found in the
 // LICENSE file.
 
-//go:build all || trap
-
 package gosnmp
 
 // Tests for SNMPv3 engine-ID discovery when the device responds with
@@ -241,7 +239,7 @@ func newV3NoAuthClientForDiscoveryTest(port uint16) *GoSNMP {
 // the usmStatsUnknownUserNames discovery tests. Cleanup is registered
 // automatically via t.Cleanup; callers must not close the agent or connection
 // themselves.
-func setupDiscoveryTest(t *testing.T) (*mockAgentUnknownUserNames, *GoSNMP) {
+func setupDiscoveryTest(t *testing.T) *GoSNMP {
 	t.Helper()
 	agent := newMockAgentUnknownUserNames(t, testDiscoveryEngineID, testDiscoveryEngineBoots, testDiscoveryEngineTime)
 	go agent.serve()
@@ -251,7 +249,7 @@ func setupDiscoveryTest(t *testing.T) (*mockAgentUnknownUserNames, *GoSNMP) {
 	require.NoError(t, ts.Connect())
 	t.Cleanup(func() { ts.Conn.Close() })
 
-	return agent, ts
+	return ts
 }
 
 // TestV3DiscoveryUnknownUserNames verifies that negotiateInitialSecurityParameters
@@ -262,7 +260,7 @@ func setupDiscoveryTest(t *testing.T) (*mockAgentUnknownUserNames, *GoSNMP) {
 // Before the fix this test fails: negotiateInitialSecurityParameters propagates
 // ErrUnknownUsername and never stores the engine parameters.
 func TestV3DiscoveryUnknownUserNames(t *testing.T) {
-	_, ts := setupDiscoveryTest(t)
+	ts := setupDiscoveryTest(t)
 
 	// mkSnmpPacket produces the same packet shape that Get() passes to
 	// negotiateInitialSecurityParameters internally.
@@ -293,7 +291,7 @@ func TestV3DiscoveryUnknownUserNames(t *testing.T) {
 // Before the fix, step 2 causes Get() to return ErrUnknownUsername. After the
 // fix, all four steps complete successfully.
 func TestV3GetWithDiscoveryUnknownUserNames(t *testing.T) {
-	_, ts := setupDiscoveryTest(t)
+	ts := setupDiscoveryTest(t)
 
 	result, err := ts.Get([]string{".1.3.6.1.2.1.1.1.0"})
 	require.NoError(t, err, "Get() must succeed when the device responds with "+

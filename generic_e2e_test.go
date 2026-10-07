@@ -9,7 +9,7 @@
 // Ensure "gosnmp-test-host" is defined in your hosts file, and points to your
 // generic test system.
 
-//go:build all || end2end
+//go:build end2end
 
 package gosnmp
 
@@ -26,11 +26,6 @@ func isUsingSnmpLabs() bool {
 	return useSnmpLabsCredentials
 }
 
-// conveniently enable demo.snmplabs.com for a one test
-func useSnmpLabs(use bool) {
-	useSnmpLabsCredentials = use
-}
-
 func getTarget(t *testing.T) (string, uint16) {
 	var envTarget string
 	var envPort string
@@ -45,11 +40,11 @@ func getTarget(t *testing.T) (string, uint16) {
 		envPort = os.Getenv("GOSNMP_PORT")
 	}
 
-	if len(envTarget) <= 0 {
+	if envTarget == "" {
 		t.Skip("environment variable not set: GOSNMP_TARGET")
 	}
 
-	if len(envPort) <= 0 {
+	if envPort == "" {
 		t.Skip("environment variable not set: GOSNMP_PORT")
 	}
 	port, _ := strconv.ParseUint(envPort, 10, 16)
@@ -155,12 +150,12 @@ func setupConnectionIPv6(t *testing.T) *GoSNMP {
 	envPort := os.Getenv("GOSNMP_PORT_IPV6")
 	gs := newTestGoSNMP()
 
-	if len(envTarget) <= 0 {
+	if envTarget == "" {
 		t.Error("environment variable not set: GOSNMP_TARGET_IPV6")
 	}
 	gs.Target = envTarget
 
-	if len(envPort) <= 0 {
+	if envPort == "" {
 		t.Error("environment variable not set: GOSNMP_PORT_IPV6")
 	}
 	port, _ := strconv.ParseUint(envPort, 10, 16)
@@ -384,7 +379,7 @@ func TestGenericFailureUnknownHost(t *testing.T) {
 func TestGenericFailureConnectionTimeout(t *testing.T) {
 	t.Skip("local testing - skipping this slow one") // TODO test tag, or something
 	envTarget := os.Getenv("GOSNMP_TARGET")
-	if len(envTarget) <= 0 {
+	if envTarget == "" {
 		t.Skip("local testing - skipping this slow one")
 	}
 
@@ -415,7 +410,7 @@ func TestGenericFailureConnectionRefused(t *testing.T) {
 	if err == nil {
 		t.Fatalf("Expected Get() to fail due to invalid port")
 	}
-	if !(strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "forcibly closed")) {
+	if !strings.Contains(err.Error(), "connection refused") && !strings.Contains(err.Error(), "forcibly closed") {
 		t.Fatalf("Expected connection refused error. Got => %v", err)
 	}
 }
