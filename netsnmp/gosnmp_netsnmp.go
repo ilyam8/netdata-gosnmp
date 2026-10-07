@@ -27,7 +27,7 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/gosnmp/gosnmp"
+	"github.com/netdata/gosnmp"
 )
 
 func isPlayback() bool {

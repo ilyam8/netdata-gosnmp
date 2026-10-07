@@ -55,10 +55,10 @@ formatters:
       sections:
         - standard
         - default
-        - prefix(github.com/gosnmp/gosnmp)
+        - prefix(github.com/netdata/gosnmp)
     gofumpt:
       extra:
         group-params: true
     goimports:
       local-prefixes:
-        - github.com/gosnmp/gosnmp
+        - github.com/netdata/gosnmp
