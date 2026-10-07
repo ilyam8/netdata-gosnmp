@@ -247,19 +247,30 @@ func decodeFuzzCorpusCases(t testing.TB) []decodeCase {
 	return cases
 }
 
-// parseFuzzCorpusBytes reads a corpus file of a fuzz target with one []byte argument.
+// parseFuzzCorpusBytes reads a corpus file of a fuzz target with one []byte
+// argument. Like the go command, it accepts CRLF line endings (a Windows
+// checkout converts them) and blank lines.
 func parseFuzzCorpusBytes(data []byte) ([]byte, error) {
-	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	if len(lines) != 2 || lines[0] != "go test fuzz v1" {
-		return nil, fmt.Errorf("unexpected corpus file format")
+	version, rest, _ := strings.Cut(string(data), "\n")
+	if version = strings.TrimSuffix(version, "\r"); version != "go test fuzz v1" {
+		return nil, fmt.Errorf("unknown corpus encoding version %q", version)
 	}
-	lit, ok := strings.CutPrefix(lines[1], "[]byte(")
+	var values []string
+	for line := range strings.Lines(rest) {
+		if line = strings.TrimSpace(line); line != "" {
+			values = append(values, line)
+		}
+	}
+	if len(values) != 1 {
+		return nil, fmt.Errorf("want one corpus value, got %d", len(values))
+	}
+	lit, ok := strings.CutPrefix(values[0], "[]byte(")
 	if !ok {
-		return nil, fmt.Errorf("unexpected corpus value %q", lines[1])
+		return nil, fmt.Errorf("unexpected corpus value %q", values[0])
 	}
 	lit, ok = strings.CutSuffix(lit, ")")
 	if !ok {
-		return nil, fmt.Errorf("unexpected corpus value %q", lines[1])
+		return nil, fmt.Errorf("unexpected corpus value %q", values[0])
 	}
 	s, err := strconv.Unquote(lit)
 	if err != nil {
