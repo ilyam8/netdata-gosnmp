@@ -6,14 +6,12 @@ package gosnmp
 
 import (
 	"bytes"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"reflect"
 	"runtime"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -887,7 +885,6 @@ func TestUnmarshal(t *testing.T) {
 					default:
 						t.Errorf("#%d:%d Unhandled case result: %v, test: %v", i, n, vbr.Value, vb.Value)
 					}
-
 				}
 			})
 			t.Run("remarshal", func(t *testing.T) {
@@ -902,7 +899,6 @@ func TestUnmarshal(t *testing.T) {
 				assert.EqualValues(t, res, resNew)
 			})
 		})
-
 	}
 }
 
@@ -1424,23 +1420,6 @@ func ciscoGetnextResponseBytes() []byte {
 	}
 }
 
-func ciscoGetnextRequestBytes() []byte {
-	return []byte{
-		0x30, 0x7e,
-		0x02, 0x01, 0x01, 0x04, 0x06, 0x70, 0x75, 0x62, 0x6c, 0x69, 0x63, 0xa1,
-		0x71, 0x02, 0x04, 0x5b, 0x1d, 0xb6, 0xee, 0x02, 0x01, 0x00, 0x02, 0x01,
-		0x00, 0x30, 0x63, 0x30, 0x15, 0x06, 0x11, 0x2b, 0x06, 0x01, 0x02, 0x01,
-		0x03, 0x01, 0x01, 0x03, 0x02, 0x01, 0x81, 0x40, 0x81, 0x28, 0x68, 0x01,
-		0x05, 0x00, 0x30, 0x0c, 0x06, 0x08, 0x2b, 0x06, 0x01, 0x02, 0x01, 0x5c,
-		0x01, 0x02, 0x05, 0x00, 0x30, 0x0e, 0x06, 0x0a, 0x2b, 0x06, 0x01, 0x02,
-		0x01, 0x01, 0x09, 0x01, 0x03, 0x02, 0x05, 0x00, 0x30, 0x0e, 0x06, 0x0a,
-		0x2b, 0x06, 0x01, 0x02, 0x01, 0x01, 0x09, 0x01, 0x04, 0x01, 0x05, 0x00,
-		0x30, 0x0e, 0x06, 0x0a, 0x2b, 0x06, 0x01, 0x02, 0x01, 0x01, 0x09, 0x01,
-		0x04, 0x08, 0x05, 0x00, 0x30, 0x0c, 0x06, 0x08, 0x2b, 0x06, 0x01, 0x02,
-		0x01, 0x01, 0x01, 0x00, 0x05, 0x00,
-	}
-}
-
 /*
 	cisco getbulk bytes corresponds to this snmpbulkget command:
 
@@ -1456,16 +1435,6 @@ iso.3.6.1.2.1.1.9.1.4.8 = Timeticks: (23) 0:00:00.23
 iso.3.6.1.2.1.2.1.0 = INTEGER: 3
 iso.3.6.1.2.1.2.2.1.1.1 = INTEGER: 1
 */
-func ciscoGetbulkRequestBytes() []byte {
-	return []byte{
-		0x30, 0x2b,
-		0x02, 0x01, 0x01, 0x04, 0x06, 0x70, 0x75, 0x62, 0x6c, 0x69, 0x63, 0xa5,
-		0x1e, 0x02, 0x04, 0x7d, 0x89, 0x68, 0xda, 0x02, 0x01, 0x00, 0x02, 0x01,
-		0x0a, 0x30, 0x10, 0x30, 0x0e, 0x06, 0x0a, 0x2b, 0x06, 0x01, 0x02, 0x01,
-		0x01, 0x09, 0x01, 0x03, 0x34, 0x05, 0x00, 0x00,
-	}
-}
-
 func ciscoGetbulkResponseBytes() []byte {
 	return []byte{
 		0x30, 0x81,
@@ -1666,54 +1635,11 @@ func TestSendOneRequest_dups(t *testing.T) {
 		Timeout: time.Millisecond * 100,
 		Retries: 2,
 	}
-	if err := x.Connect(); err != nil {
+	if err = x.Connect(); err != nil {
 		t.Fatalf("error connecting: %s", err)
 	}
 
-	go func() {
-		buf := make([]byte, 256)
-		for {
-			n, addr, err := srvr.ReadFrom(buf)
-			if err != nil {
-				return
-			}
-			buf := buf[:n]
-
-			var reqPkt SnmpPacket
-			var cursor int
-			cursor, err = x.unmarshalHeader(buf, &reqPkt)
-			if err != nil {
-				t.Errorf("error: %s", err)
-			}
-			// if x.Version == Version3 {
-			//	buf, cursor, err = x.decryptPacket(buf, cursor, &reqPkt)
-			//	if err != nil {
-			//		t.Errorf("error: %s", err)
-			//	}
-			//}
-			err = x.unmarshalPayload(buf, cursor, &reqPkt)
-			if err != nil {
-				t.Errorf("error: %s", err)
-			}
-
-			rspPkt := x.mkSnmpPacket(GetResponse, []SnmpPDU{
-				{
-					Name:  ".1.2",
-					Type:  Integer,
-					Value: 123,
-				},
-			}, 0, 0)
-			rspPkt.RequestID = reqPkt.RequestID
-			outBuf, err := rspPkt.marshalMsg()
-			if err != nil {
-				t.Errorf("ERR: %s", err)
-			}
-			srvr.WriteTo(outBuf, addr)
-			for i := 0; i <= x.Retries; i++ {
-				srvr.WriteTo(outBuf, addr)
-			}
-		}
-	}()
+	go serveGetResponses(t, srvr, x, sendCopies(srvr, x.Retries+2))
 
 	pdus := []SnmpPDU{{Name: ".1.2", Type: Null}}
 	// This is not actually a GetResponse, but we need something our test server can unmarshal.
@@ -1742,8 +1668,8 @@ func TestSendOneRequest_TCP_EOF_Reconnect(t *testing.T) {
 
 	// Start mock SNMP server in goroutine
 	go func() {
-		conn, err := listen.Accept()
-		if err != nil {
+		conn, acceptErr := listen.Accept()
+		if acceptErr != nil {
 			return
 		}
 		defer conn.Close()
@@ -1797,23 +1723,11 @@ func BenchmarkSendOneRequest(b *testing.B) {
 		Timeout: time.Millisecond * 100,
 		Retries: 2,
 	}
-	if err := x.Connect(); err != nil {
+	if err = x.Connect(); err != nil {
 		b.Fatalf("error connecting: %s", err)
 	}
 
-	go func() {
-		buf := make([]byte, 256)
-		outBuf := counter64Response()
-		for {
-			_, addr, err := srvr.ReadFrom(buf)
-			if err != nil {
-				return
-			}
-
-			copy(outBuf[17:21], buf[11:15]) // evil: copy request ID
-			srvr.WriteTo(outBuf, addr)
-		}
-	}()
+	go serveCounter64Responses(srvr)
 
 	pdus := []SnmpPDU{{Name: ".1.3.6.1.2.1.31.1.1.1.10.1", Type: Null}}
 	reqPkt := x.mkSnmpPacket(GetRequest, pdus, 0, 0)
@@ -1859,54 +1773,12 @@ func withUnconnectedSocket(t *testing.T, enable bool) {
 		UseUnconnectedUDPSocket: enable,
 		LocalAddr:               "0.0.0.0:",
 	}
-	if err := x.Connect(); err != nil {
+	if err = x.Connect(); err != nil {
 		t.Fatalf("error connecting: %s", err)
 	}
 	defer x.Conn.Close()
 
-	go func() {
-		buf := make([]byte, 256)
-		for {
-			n, addr, err := srvr.ReadFrom(buf)
-			if err != nil {
-				return
-			}
-			buf := buf[:n]
-
-			var reqPkt SnmpPacket
-			var cursor int
-			cursor, err = x.unmarshalHeader(buf, &reqPkt)
-			if err != nil {
-				t.Errorf("error: %s", err)
-			}
-			err = x.unmarshalPayload(buf, cursor, &reqPkt)
-			if err != nil {
-				t.Errorf("error: %s", err)
-			}
-
-			rspPkt := x.mkSnmpPacket(GetResponse, []SnmpPDU{
-				{
-					Name:  ".1.2",
-					Type:  Integer,
-					Value: 123,
-				},
-			}, 0, 0)
-			rspPkt.RequestID = reqPkt.RequestID
-			outBuf, err := rspPkt.marshalMsg()
-			if err != nil {
-				t.Errorf("ERR: %s", err)
-			}
-			// Temporary socket will use different source port, it's enough to break
-			// connected socket reply filters.
-			nsock, err := net.ListenUDP("udp", nil)
-			if err != nil {
-				t.Errorf("can't create temporary reply socket: %v", err)
-				return
-			}
-			nsock.WriteTo(outBuf, addr)
-			nsock.Close()
-		}
-	}()
+	go serveGetResponses(t, srvr, x, sendFromNewSocket)
 
 	pdus := []SnmpPDU{{Name: ".1.2", Type: Null}}
 	// This is not actually a GetResponse, but we need something our test server can unmarshal.
@@ -1917,6 +1789,88 @@ func withUnconnectedSocket(t *testing.T, enable bool) {
 		t.Errorf("with unconnected socket enabled got unexpected error: %v", err)
 	} else if err == nil && !enable {
 		t.Errorf("with unconnected socket disabled didn't get an error")
+	}
+}
+
+// serveGetResponses answers each request read from srvr with a GetResponse for
+// .1.2 that carries the request ID, and hands the encoded reply to send. It
+// returns when srvr is closed or send fails; send errors are not reported
+// because they also happen when the test has finished and closed srvr.
+func serveGetResponses(t *testing.T, srvr *net.UDPConn, x *GoSNMP, send func(reply []byte, addr net.Addr) error) {
+	buf := make([]byte, 256)
+	for {
+		n, addr, err := srvr.ReadFrom(buf)
+		if err != nil {
+			return
+		}
+		req := buf[:n]
+
+		var reqPkt SnmpPacket
+		cursor, err := x.unmarshalHeader(req, &reqPkt)
+		if err != nil {
+			t.Errorf("error: %s", err)
+		}
+		if err = x.unmarshalPayload(req, cursor, &reqPkt); err != nil {
+			t.Errorf("error: %s", err)
+		}
+
+		rspPkt := x.mkSnmpPacket(GetResponse, []SnmpPDU{
+			{
+				Name:  ".1.2",
+				Type:  Integer,
+				Value: 123,
+			},
+		}, 0, 0)
+		rspPkt.RequestID = reqPkt.RequestID
+		reply, err := rspPkt.marshalMsg()
+		if err != nil {
+			t.Errorf("ERR: %s", err)
+		}
+		if send(reply, addr) != nil {
+			return
+		}
+	}
+}
+
+// sendCopies returns a send function for serveGetResponses that writes each
+// reply count times from srvr.
+func sendCopies(srvr *net.UDPConn, count int) func([]byte, net.Addr) error {
+	return func(reply []byte, addr net.Addr) error {
+		for range count {
+			if _, err := srvr.WriteTo(reply, addr); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
+// sendFromNewSocket writes reply from a temporary socket. Its different source
+// port is enough to break connected socket reply filters.
+func sendFromNewSocket(reply []byte, addr net.Addr) error {
+	nsock, err := net.ListenUDP("udp", nil)
+	if err != nil {
+		return err
+	}
+	defer nsock.Close()
+	_, err = nsock.WriteTo(reply, addr)
+	return err
+}
+
+// serveCounter64Responses answers each request read from srvr with
+// counter64Response, copying in the request ID. It returns when srvr is closed.
+func serveCounter64Responses(srvr *net.UDPConn) {
+	buf := make([]byte, 256)
+	reply := counter64Response()
+	for {
+		_, addr, err := srvr.ReadFrom(buf)
+		if err != nil {
+			return
+		}
+		copy(reply[17:21], buf[11:15]) // evil: copy request ID
+		if _, err = srvr.WriteTo(reply, addr); err != nil {
+			return
+		}
 	}
 }
 
@@ -2051,48 +2005,8 @@ func snmpv3HelloResponse() []byte {
 	}
 }
 
-// dump bytes in a format similar to Wireshark
-func dumpBytes1(data []byte, msg string, maxlength int) {
-	var buffer bytes.Buffer
-	buffer.WriteString(msg)
-	length := min(len(data), maxlength)
-	length *= 2 // One Byte Symbols Two Hex
-	hexStr := hex.EncodeToString(data)
-	for i := 0; length >= i+16; i += 16 {
-		buffer.WriteString("\n")
-		buffer.WriteString(strconv.Itoa(i / 2))
-		buffer.WriteString("\t")
-		buffer.WriteString(hexStr[i : i+2])
-		buffer.WriteString(" ")
-		buffer.WriteString(hexStr[i+2 : i+4])
-		buffer.WriteString(" ")
-		buffer.WriteString(hexStr[i+4 : i+6])
-		buffer.WriteString(" ")
-		buffer.WriteString(hexStr[i+6 : i+8])
-		buffer.WriteString(" ")
-		buffer.WriteString(hexStr[i+8 : i+10])
-		buffer.WriteString(" ")
-		buffer.WriteString(hexStr[i+10 : i+12])
-		buffer.WriteString(" ")
-		buffer.WriteString(hexStr[i+12 : i+14])
-		buffer.WriteString(" ")
-		buffer.WriteString(hexStr[i+14 : i+16])
-	}
-	leftOver := length % 16
-	if leftOver != 0 {
-		buffer.WriteString("\n")
-		buffer.WriteString(strconv.Itoa((length - leftOver) / 2))
-		buffer.WriteString("\t")
-		for i := 0; leftOver >= i+2; i += 2 {
-			buffer.WriteString(hexStr[i : i+2])
-			buffer.WriteString(" ")
-		}
-	}
-	buffer.WriteString("\n")
-}
-
 // dump bytes in one row, up to about screen width. Returns a string
-// rather than (dumpBytes1) writing to debugging log.
+// rather than writing to the debugging log.
 func dumpBytes2(desc string, bb []byte, cursor int) string {
 	cursor = max(cursor-4, 0) // give some context to dump
 	result := desc
@@ -2412,18 +2326,30 @@ func TestUnmarshalVBL(t *testing.T) {
 		{"empty_VBL_long_form_BER", []byte{0x30, 0x82, 0x00, 0x00}, false, 0, nil},
 
 		// Recoverable OctetString lengths
-		{"OctetString_overdeclared_by_one,valid", buildVBL(badVB(0x01, OctetString, []byte("test"), 5), goodVB(0x02, OctetString, []byte("data"))), false, 2,
-			[]wantPDU{{".1.3.6.1", OctetString, []byte("test")}, {".1.3.6.2", OctetString, []byte("data")}}},
-		{"OctetString_overdeclared_by_one_last", buildVBL(badVB(0x01, OctetString, []byte("test"), 5)), false, 1,
-			[]wantPDU{{".1.3.6.1", OctetString, []byte("test")}}},
-		{"OctetString_empty_overdeclared_by_one", buildVBL(badVB(0x01, OctetString, nil, 1)), false, 1,
-			[]wantPDU{{".1.3.6.1", OctetString, []byte{}}}},
-		{"OctetString_overdeclared_by_one_long_form,valid", buildVBL(badVB(0x01, OctetString, largeContent, 201), goodVB(0x02, OctetString, []byte("ok"))), false, 2,
-			[]wantPDU{{".1.3.6.1", OctetString, largeContent}, {".1.3.6.2", OctetString, []byte("ok")}}},
-		{"large_OctetString_off_by_one_last", buildVBL(badVB(0x01, OctetString, largeString, 448)), false, 1,
-			[]wantPDU{{".1.3.6.1", OctetString, largeString}}},
-		{"large_OctetString_off_by_one,valid", buildVBL(badVB(0x01, OctetString, largeString, 448), goodVB(0x02, OctetString, []byte("ok"))), false, 2,
-			[]wantPDU{{".1.3.6.1", OctetString, largeString}, {".1.3.6.2", OctetString, []byte("ok")}}},
+		{
+			"OctetString_overdeclared_by_one,valid", buildVBL(badVB(0x01, OctetString, []byte("test"), 5), goodVB(0x02, OctetString, []byte("data"))), false, 2,
+			[]wantPDU{{".1.3.6.1", OctetString, []byte("test")}, {".1.3.6.2", OctetString, []byte("data")}},
+		},
+		{
+			"OctetString_overdeclared_by_one_last", buildVBL(badVB(0x01, OctetString, []byte("test"), 5)), false, 1,
+			[]wantPDU{{".1.3.6.1", OctetString, []byte("test")}},
+		},
+		{
+			"OctetString_empty_overdeclared_by_one", buildVBL(badVB(0x01, OctetString, nil, 1)), false, 1,
+			[]wantPDU{{".1.3.6.1", OctetString, []byte{}}},
+		},
+		{
+			"OctetString_overdeclared_by_one_long_form,valid", buildVBL(badVB(0x01, OctetString, largeContent, 201), goodVB(0x02, OctetString, []byte("ok"))), false, 2,
+			[]wantPDU{{".1.3.6.1", OctetString, largeContent}, {".1.3.6.2", OctetString, []byte("ok")}},
+		},
+		{
+			"large_OctetString_off_by_one_last", buildVBL(badVB(0x01, OctetString, largeString, 448)), false, 1,
+			[]wantPDU{{".1.3.6.1", OctetString, largeString}},
+		},
+		{
+			"large_OctetString_off_by_one,valid", buildVBL(badVB(0x01, OctetString, largeString, 448), goodVB(0x02, OctetString, []byte("ok"))), false, 2,
+			[]wantPDU{{".1.3.6.1", OctetString, largeString}, {".1.3.6.2", OctetString, []byte("ok")}},
+		},
 
 		// Invalid value lengths
 		{"OctetString_overdeclared_by_two", buildVBL(badVB(0x01, OctetString, []byte("test"), 6)), true, 0, nil},
@@ -2479,8 +2405,10 @@ func TestUnmarshalVBL(t *testing.T) {
 		}(), true, 0, nil},
 
 		// Varbind boundary isolation
-		{"cross_contamination", buildVBL(badVB(0x01, OctetString, []byte("AAAA"), 5), goodVB(0x02, OctetString, []byte("SECRET"))), false, 2,
-			[]wantPDU{{".1.3.6.1", OctetString, []byte("AAAA")}, {".1.3.6.2", OctetString, []byte("SECRET")}}},
+		{
+			"cross_contamination", buildVBL(badVB(0x01, OctetString, []byte("AAAA"), 5), goodVB(0x02, OctetString, []byte("SECRET"))), false, 2,
+			[]wantPDU{{".1.3.6.1", OctetString, []byte("AAAA")}, {".1.3.6.2", OctetString, []byte("SECRET")}},
+		},
 	}
 
 	for _, tt := range tests {

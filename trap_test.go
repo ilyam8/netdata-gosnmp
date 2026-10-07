@@ -109,7 +109,6 @@ func TestUnmarshalTrap(t *testing.T) {
 
 SANITY:
 	for i, test := range testsUnmarshalTrap {
-
 		gs.SecurityParameters = test.out.SecurityParameters.Copy()
 		buf := test.in()
 		res, err := gs.UnmarshalTrap(buf, true)
@@ -133,7 +132,7 @@ SANITY:
 func TestUnmarshalTrapWithMultipleUsers(t *testing.T) {
 	usmMap := NewSnmpV3SecurityParametersTable(NewLogger(log.New(io.Discard, "", 0)))
 	for _, sp := range secParamsList {
-		usmMap.Add(sp.UserName, sp)
+		require.NoError(t, usmMap.Add(sp.UserName, sp))
 	}
 	gs := newTestGoSNMP()
 	gs.TrapSecurityParametersTable = usmMap
@@ -204,8 +203,7 @@ func snmpV3AuthPrivTrap() []byte {
 }
 
 func makeTestTrapHandler(done chan<- error, version SnmpVersion) func(*SnmpPacket, *net.UDPAddr) {
-	return func(packet *SnmpPacket, addr *net.UDPAddr) {
-		//log.Printf("got trapdata from %s\n", addr.IP)
+	return func(packet *SnmpPacket, _ *net.UDPAddr) {
 		done <- checkTestTrap(packet, version)
 	}
 }
@@ -429,7 +427,7 @@ func TestSendTrapWithoutWaitingOnListen(t *testing.T) {
 	// Wait for a response from the handler and restart the SendTrap
 	// if the listener wasn't ready.
 	select {
-	case err := <-done:
+	case err = <-done:
 		require.NoError(t, err)
 	case <-time.After(2 * time.Second):
 		_, err = gs.SendTrap(trap)

@@ -41,10 +41,18 @@ linters:
       - legacy
       - std-error-handling
     rules:
+      # Table-driven tests repeat structure, and test fixtures convert sizes freely.
       - linters:
+          - dupl
           - gochecknoglobals
+          - gosec
           - nolintlint
         path: _test.go
+      # Explicit declaration types are what the public API tests assert.
+      - linters:
+          - staticcheck
+        path: gosnmp_api_test.go
+        text: (ST1023|QF1011)
 formatters:
   enable:
     - gci

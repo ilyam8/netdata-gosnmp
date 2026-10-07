@@ -19,7 +19,7 @@ import (
 	"github.com/netdata/gosnmp"
 )
 
-func TestAPIConfigTypes(t *testing.T) {
+func TestAPIConfigTypes(_ *testing.T) {
 	g := &gosnmp.GoSNMP{}
 	g.Target = ""
 	g.Port = 0
@@ -32,67 +32,56 @@ func TestAPIConfigTypes(t *testing.T) {
 	g.MaxRepetitions = 0
 	g.NonRepeaters = 0
 	g.Logger = gosnmp.NewLogger(log.New(io.Discard, "", 0))
-	var c net.Conn
-	c = g.Conn
+	var c net.Conn = g.Conn
 	_ = c
 }
 
-func TestAPIDefault(t *testing.T) {
-	var g *gosnmp.GoSNMP
-	g = gosnmp.Default
+func TestAPIDefault(_ *testing.T) {
+	var g *gosnmp.GoSNMP = gosnmp.Default
 	_ = g
 }
 
-func TestAPIConnectMethodSignature(t *testing.T) {
-	var f func() error
-	f = gosnmp.Default.Connect
+func TestAPIConnectMethodSignature(_ *testing.T) {
+	var f func() error = gosnmp.Default.Connect
 	_ = f
 }
 
-func TestAPIGetMethodSignature(t *testing.T) {
-	var f func([]string) (*gosnmp.SnmpPacket, error)
-	f = gosnmp.Default.Get
+func TestAPIGetMethodSignature(_ *testing.T) {
+	var f func([]string) (*gosnmp.SnmpPacket, error) = gosnmp.Default.Get
 	_ = f
 }
 
-func TestAPISetMethodSignature(t *testing.T) {
-	var f func([]gosnmp.SnmpPDU) (*gosnmp.SnmpPacket, error)
-	f = gosnmp.Default.Set
+func TestAPISetMethodSignature(_ *testing.T) {
+	var f func([]gosnmp.SnmpPDU) (*gosnmp.SnmpPacket, error) = gosnmp.Default.Set
 	_ = f
 }
 
-func TestAPIGetNextMethodSignature(t *testing.T) {
-	var f func([]string) (*gosnmp.SnmpPacket, error)
-	f = gosnmp.Default.GetNext
+func TestAPIGetNextMethodSignature(_ *testing.T) {
+	var f func([]string) (*gosnmp.SnmpPacket, error) = gosnmp.Default.GetNext
 	_ = f
 }
 
-func TestAPIBulkWalkMethodSignature(t *testing.T) {
-	var f func(string, gosnmp.WalkFunc) error
-	f = gosnmp.Default.BulkWalk
+func TestAPIBulkWalkMethodSignature(_ *testing.T) {
+	var f func(string, gosnmp.WalkFunc) error = gosnmp.Default.BulkWalk
 	_ = f
 }
 
-func TestAPIBulkWalkAllMethodSignature(t *testing.T) {
-	var f func(string) ([]gosnmp.SnmpPDU, error)
-	f = gosnmp.Default.BulkWalkAll
+func TestAPIBulkWalkAllMethodSignature(_ *testing.T) {
+	var f func(string) ([]gosnmp.SnmpPDU, error) = gosnmp.Default.BulkWalkAll
 	_ = f
 }
 
-func TestAPIWalkMethodSignature(t *testing.T) {
-	var f func(string, gosnmp.WalkFunc) error
-	f = gosnmp.Default.Walk
+func TestAPIWalkMethodSignature(_ *testing.T) {
+	var f func(string, gosnmp.WalkFunc) error = gosnmp.Default.Walk
 	_ = f
 }
 
-func TestAPIWalkAllMethodSignature(t *testing.T) {
-	var f func(string) ([]gosnmp.SnmpPDU, error)
-	f = gosnmp.Default.WalkAll
+func TestAPIWalkAllMethodSignature(_ *testing.T) {
+	var f func(string) ([]gosnmp.SnmpPDU, error) = gosnmp.Default.WalkAll
 	_ = f
 }
 
-func TestAPIWalkFuncSignature(t *testing.T) {
-	var f gosnmp.WalkFunc
-	f = func(du gosnmp.SnmpPDU) (err error) { return err }
+func TestAPIWalkFuncSignature(_ *testing.T) {
+	var f gosnmp.WalkFunc = func(_ gosnmp.SnmpPDU) (err error) { return err }
 	_ = f
 }

@@ -401,14 +401,18 @@ func TestMarshalObjectIdentifier(t *testing.T) {
 func BenchmarkParseObjectIdentifier(b *testing.B) {
 	oid := []byte{43, 6, 3, 30, 11, 1, 10}
 	for i := 0; i < b.N; i++ {
-		parseObjectIdentifier(oid)
+		if _, err := parseObjectIdentifier(oid); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
 func BenchmarkMarshalObjectIdentifier(b *testing.B) {
 	oid := ".1.3.6.3.30.11.1.10"
 	for i := 0; i < b.N; i++ {
-		marshalObjectIdentifier(oid)
+		if _, err := marshalObjectIdentifier(oid); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
