@@ -2,8 +2,6 @@
 // source code is governed by a BSD-style license that can be found in the
 // LICENSE file.
 
-//go:build all || trap
-
 package gosnmp
 
 // Tests for SNMPv3 engine-ID discovery when the device responds with

@@ -2,8 +2,6 @@
 // source code is governed by a BSD-style license that can be found in the
 // LICENSE file.
 
-//go:build all || marshal
-
 package gosnmp
 
 import (
@@ -1846,7 +1844,7 @@ func TestUnconnectedSocket_success(t *testing.T) {
 }
 
 func withUnconnectedSocket(t *testing.T, enable bool) {
-	srvr, err := net.ListenUDP("udp", &net.UDPAddr{})
+	srvr, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {
 		t.Fatalf("udp error listening: %s", err)
 	}
@@ -1903,6 +1901,7 @@ func withUnconnectedSocket(t *testing.T, enable bool) {
 			nsock, err := net.ListenUDP("udp", nil)
 			if err != nil {
 				t.Errorf("can't create temporary reply socket: %v", err)
+				return
 			}
 			nsock.WriteTo(outBuf, addr)
 			nsock.Close()

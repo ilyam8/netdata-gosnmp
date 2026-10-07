@@ -7,8 +7,6 @@
 // IMPORTANT: If you're modifying _any_ existing code in this file, you
 // should be asking yourself about API compatibility!
 
-//go:build all || api
-
 package gosnmp_test // force external view
 
 import (
