@@ -5,6 +5,7 @@
 package gosnmp
 
 import (
+	"bytes"
 	"encoding/base64"
 	"io"
 	"log"
@@ -439,7 +440,7 @@ func TestMarshalUint32(t *testing.T) {
 		if err != nil {
 			t.Errorf("%d: expected %0x got err %v", i, test.goodBytes, err)
 		}
-		if !checkByteEquality2(test.goodBytes, result) {
+		if !bytes.Equal(test.goodBytes, result) {
 			t.Errorf("%d: expected %0x got %0x", i, test.goodBytes, result)
 		}
 	}
@@ -562,28 +563,6 @@ func TestInvalidSNMPResponses(t *testing.T) {
 			t.Errorf("#%d, failed to error %v", i, result)
 		}
 	}
-}
-
-func checkByteEquality2(a, b []byte) bool {
-	if a == nil && b == nil {
-		return true
-	}
-
-	if a == nil || b == nil {
-		return false
-	}
-
-	if len(a) != len(b) {
-		return false
-	}
-
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-
-	return true
 }
 
 // TestParseLength tests the parseLength function with various BER length encodings
@@ -948,7 +927,7 @@ func TestMarshalFloat32(t *testing.T) {
 				t.Errorf("marshalFloat32() unexpected error: %v", err)
 				return
 			}
-			if !checkByteEquality2(got, tt.want) {
+			if !bytes.Equal(got, tt.want) {
 				t.Errorf("marshalFloat32() = %v, want %v", got, tt.want)
 			}
 		})
@@ -1019,7 +998,7 @@ func TestMarshalFloat64(t *testing.T) {
 				t.Errorf("marshalFloat64() unexpected error: %v", err)
 				return
 			}
-			if !checkByteEquality2(got, tt.want) {
+			if !bytes.Equal(got, tt.want) {
 				t.Errorf("marshalFloat64() = %v, want %v", got, tt.want)
 			}
 		})

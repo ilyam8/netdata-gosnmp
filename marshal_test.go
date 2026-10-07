@@ -166,7 +166,7 @@ var testsEnmarshal = []testsEnmarshalT{
 		[]testsEnmarshalVarbindPosition{
 			{
 				".1.3.6.1.4.1.2863.205.1.1.75.2.0",
-				0x1e, 0x36, OctetString, []byte("telnet"),
+				0x1e, 0x37, OctetString, []byte("telnet"),
 			},
 		},
 	},
@@ -223,7 +223,7 @@ var testsEnmarshal = []testsEnmarshalT{
 		[]testsEnmarshalVarbindPosition{
 			{".1.3.6.1.2.1.1.3.0", 0x1e, 0x2f, TimeTicks, uint32(18542501)},
 			{".1.3.6.1.6.3.1.1.4.1.0", 0x30, 0x45, ObjectIdentifier, ".1.3.6.1.2.1.1"},
-			{".1.3.6.1.2.1.1.1.0", 0x46, 0x59, OctetString, "red laptop"},
+			{".1.3.6.1.2.1.1.1.0", 0x46, 0x5d, OctetString, "red laptop"},
 			{".1.3.6.1.2.1.1.7.0", 0x5e, 0x6c, Integer, 5},
 			{".1.3.6.1.2.1.1.2", 0x6d, 0x82, ObjectIdentifier, ".1.3.6.1.4.1.2.3.4.5"},
 		},
@@ -241,28 +241,15 @@ func vbPosPdus(test testsEnmarshalT) (pdus []SnmpPDU) {
 	return pdus
 }
 
-// checkByteEquality walks the bytes in testBytes, and compares them to goodBytes
+// checkByteEquality checks that testBytes equals goodBytes[start:finish+1] exactly.
 func checkByteEquality(t *testing.T, test testsEnmarshalT, testBytes []byte,
 	start, finish int,
 ) {
-	testBytesLen := len(testBytes)
-
-	goodBytes := test.goodBytes()
-	goodBytes = goodBytes[start : finish+1]
-	for cursor := range goodBytes {
-		if testBytesLen < cursor {
-			t.Errorf("%s: testBytesLen (%d) < cursor (%d)", test.funcName,
-				testBytesLen, cursor)
-			break
-		}
-		if testBytes[cursor] != goodBytes[cursor] {
-			t.Errorf("%s: cursor %d: testBytes != goodBytes:\n%s\n%s",
-				test.funcName,
-				cursor,
-				dumpBytes2("good", goodBytes, cursor),
-				dumpBytes2("test", testBytes, cursor))
-			break
-		}
+	t.Helper()
+	goodBytes := test.goodBytes()[start : finish+1]
+	if !bytes.Equal(testBytes, goodBytes) {
+		t.Errorf("%s: bytes differ:\ngot  (%d) % x\nwant (%d) % x",
+			test.funcName, len(testBytes), testBytes, len(goodBytes), goodBytes)
 	}
 }
 
@@ -415,12 +402,12 @@ var testsUnmarshal = []struct {
 				{
 					Name:  ".1.3.6.1.2.1.2.2.1.10.1",
 					Type:  Counter32,
-					Value: 271070065,
+					Value: uint(271070065),
 				},
 				{
 					Name:  ".1.3.6.1.2.1.2.2.1.5.1",
 					Type:  Gauge32,
-					Value: 100000000,
+					Value: uint(100000000),
 				},
 				{
 					Name:  ".1.3.6.1.2.1.1.4.0",
@@ -567,7 +554,7 @@ var testsUnmarshal = []struct {
 				{
 					Name:  ".1.3.6.1.2.1.92.1.2.1.0",
 					Type:  Counter32,
-					Value: 0,
+					Value: uint(0),
 				},
 				{
 					Name:  ".1.3.6.1.2.1.1.9.1.3.3",
@@ -577,7 +564,7 @@ var testsUnmarshal = []struct {
 				{
 					Name:  ".1.3.6.1.2.1.1.9.1.4.2",
 					Type:  TimeTicks,
-					Value: 21,
+					Value: uint32(21),
 				},
 				{
 					Name:  ".1.3.6.1.2.1.2.1.0",
@@ -595,52 +582,52 @@ var testsUnmarshal = []struct {
 	{
 		ciscoGetbulkResponseBytes,
 		&SnmpPacket{
-			Version:        Version2c,
-			Community:      "public",
-			PDUType:        GetResponse,
-			RequestID:      250000266,
-			NonRepeaters:   0,
-			MaxRepetitions: 10,
+			Version:    Version2c,
+			Community:  "public",
+			PDUType:    GetResponse,
+			RequestID:  250000266,
+			Error:      0,
+			ErrorIndex: 0,
 			Variables: []SnmpPDU{
 				{
 					Name:  ".1.3.6.1.2.1.1.9.1.4.1",
 					Type:  TimeTicks,
-					Value: 21,
+					Value: uint32(21),
 				},
 				{
 					Name:  ".1.3.6.1.2.1.1.9.1.4.2",
 					Type:  TimeTicks,
-					Value: 21,
+					Value: uint32(21),
 				},
 				{
 					Name:  ".1.3.6.1.2.1.1.9.1.4.3",
 					Type:  TimeTicks,
-					Value: 21,
+					Value: uint32(21),
 				},
 				{
 					Name:  ".1.3.6.1.2.1.1.9.1.4.4",
 					Type:  TimeTicks,
-					Value: 21,
+					Value: uint32(21),
 				},
 				{
 					Name:  ".1.3.6.1.2.1.1.9.1.4.5",
 					Type:  TimeTicks,
-					Value: 21,
+					Value: uint32(21),
 				},
 				{
 					Name:  ".1.3.6.1.2.1.1.9.1.4.6",
 					Type:  TimeTicks,
-					Value: 23,
+					Value: uint32(23),
 				},
 				{
 					Name:  ".1.3.6.1.2.1.1.9.1.4.7",
 					Type:  TimeTicks,
-					Value: 23,
+					Value: uint32(23),
 				},
 				{
 					Name:  ".1.3.6.1.2.1.1.9.1.4.8",
 					Type:  TimeTicks,
-					Value: 23,
+					Value: uint32(23),
 				},
 				{
 					Name:  ".1.3.6.1.2.1.2.1.0",
@@ -763,7 +750,7 @@ var testsUnmarshal = []struct {
 				{
 					Name:  ".1.3.6.1.6.3.15.1.1.4.0",
 					Type:  Counter32,
-					Value: 21,
+					Value: uint(21),
 				},
 			},
 		},
@@ -807,6 +794,36 @@ func FuzzUnmarshal(f *testing.F) {
 	})
 }
 
+// unmarshalView holds the decoded packet fields that TestUnmarshal compares,
+// including the exact Go type of every varbind value.
+type unmarshalView struct {
+	Version        SnmpVersion
+	Community      string
+	MsgID          uint32
+	PDUType        PDUType
+	RequestID      uint32
+	Error          SNMPError
+	ErrorIndex     uint8
+	NonRepeaters   uint8
+	MaxRepetitions uint32
+	Variables      []SnmpPDU
+}
+
+func newUnmarshalView(p *SnmpPacket) unmarshalView {
+	return unmarshalView{
+		Version:        p.Version,
+		Community:      p.Community,
+		MsgID:          p.MsgID,
+		PDUType:        p.PDUType,
+		RequestID:      p.RequestID,
+		Error:          p.Error,
+		ErrorIndex:     p.ErrorIndex,
+		NonRepeaters:   p.NonRepeaters,
+		MaxRepetitions: p.MaxRepetitions,
+		Variables:      p.Variables,
+	}
+}
+
 func TestUnmarshal(t *testing.T) {
 	for i, test := range testsUnmarshal {
 		funcName := runtime.FuncForPC(reflect.ValueOf(test.in).Pointer()).Name()
@@ -817,75 +834,10 @@ func TestUnmarshal(t *testing.T) {
 			testBytes := test.in()
 			res, err := vhandle.SnmpDecodePacket(testBytes)
 			if err != nil {
-				t.Errorf("#%s: SnmpDecodePacket() err returned: %v", funcName, err)
+				t.Fatalf("#%s: SnmpDecodePacket() err returned: %v", funcName, err)
 			}
 			t.Run("unmarshal", func(t *testing.T) {
-				// test "header" fields
-				if res.Version != test.out.Version {
-					t.Errorf("#%d Version result: %v, test: %v", i, res.Version, test.out.Version)
-				}
-				if res.Community != test.out.Community {
-					t.Errorf("#%d Community result: %v, test: %v", i, res.Community, test.out.Community)
-				}
-				if res.PDUType != test.out.PDUType {
-					t.Errorf("#%d PDUType result: %v, test: %v", i, res.PDUType, test.out.PDUType)
-				}
-				if res.RequestID != test.out.RequestID {
-					t.Errorf("#%d RequestID result: %v, test: %v", i, res.RequestID, test.out.RequestID)
-				}
-				if res.Error != test.out.Error {
-					t.Errorf("#%d Error result: %v, test: %v", i, res.Error, test.out.Error)
-				}
-				if res.ErrorIndex != test.out.ErrorIndex {
-					t.Errorf("#%d ErrorIndex result: %v, test: %v", i, res.ErrorIndex, test.out.ErrorIndex)
-				}
-
-				// test varbind values
-				for n, vb := range test.out.Variables {
-					if len(res.Variables) < n {
-						t.Errorf("#%d:%d ran out of varbind results", i, n)
-						return
-					}
-					vbr := res.Variables[n]
-
-					if vbr.Name != vb.Name {
-						t.Errorf("#%d:%d Name result: %v, test: %v", i, n, vbr.Name, vb.Name)
-					}
-					if vbr.Type != vb.Type {
-						t.Errorf("#%d:%d Type result: %v, test: %v", i, n, vbr.Type, vb.Type)
-					}
-
-					switch vb.Type {
-					case Integer, Gauge32, Counter32, TimeTicks, Counter64:
-						vbval := ToBigInt(vb.Value)
-						vbrval := ToBigInt(vbr.Value)
-						if vbval.Cmp(vbrval) != 0 {
-							t.Errorf("#%d:%d Value result: %v, test: %v", i, n, vbr.Value, vb.Value)
-						}
-					case OctetString, Opaque:
-						if !bytes.Equal(vb.Value.([]byte), vbr.Value.([]byte)) {
-							t.Errorf("#%d:%d Value result: %v, test: %v", i, n, vbr.Value, vb.Value)
-						}
-					case IPAddress, ObjectIdentifier:
-						if vb.Value != vbr.Value {
-							t.Errorf("#%d:%d Value result: %v, test: %v", i, n, vbr.Value, vb.Value)
-						}
-					case Null, NoSuchObject, NoSuchInstance:
-						if (vb.Value != nil) || (vbr.Value != nil) {
-							t.Errorf("#%d:%d Value result: %v, test: %v", i, n, vbr.Value, vb.Value)
-						}
-					case OpaqueFloat:
-						if vb.Value.(float32) != vbr.Value.(float32) {
-							t.Errorf("#%d:%d Value result: %v, test: %v", i, n, vbr.Value, vb.Value)
-						}
-					case OpaqueDouble:
-						if vb.Value.(float64) != vbr.Value.(float64) {
-							t.Errorf("#%d:%d Value result: %v, test: %v", i, n, vbr.Value, vb.Value)
-						}
-					default:
-						t.Errorf("#%d:%d Unhandled case result: %v, test: %v", i, n, vbr.Value, vb.Value)
-					}
-				}
+				assert.Equal(t, newUnmarshalView(test.out), newUnmarshalView(res))
 			})
 			t.Run("remarshal", func(t *testing.T) {
 				result, err := res.marshalMsg()
@@ -1914,20 +1866,7 @@ func trap1() []byte {
 		0x01, 0x00, 0x04, 0x0a, 0x72, 0x65, 0x64, 0x20, 0x6c, 0x61, 0x70, 0x74, 0x6f, 0x70, 0x30, 0x0d,
 		0x06, 0x08, 0x2b, 0x06, 0x01, 0x02, 0x01, 0x01, 0x07, 0x00, 0x02, 0x01, 0x05, 0x30, 0x14, 0x06,
 		0x07, 0x2b, 0x06, 0x01, 0x02, 0x01, 0x01, 0x02, 0x06, 0x09, 0x2b, 0x06, 0x01, 0x04, 0x01, 0x02,
-		0x03, 0x04, 0x05, 0x00, 0x00, 0x00, 0xd0, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x68, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x74, 0x3a, 0x05, 0x00, 0xa1, 0x27, 0x42, 0x0c, 0x46, 0x00,
-		0x00, 0x00, 0x46, 0x00, 0x00, 0x00, 0x10, 0x4a, 0x7d, 0x34, 0x3a, 0xa5, 0x74, 0xda, 0x38, 0x4d,
-		0x6c, 0x6c, 0x08, 0x00, 0x45, 0x00, 0x00, 0x38, 0xcc, 0xdb, 0x40, 0x00, 0xff, 0x01, 0x2b, 0x74,
-		0xc0, 0xa8, 0x01, 0x0a, 0xc0, 0xa8, 0x01, 0x1a, 0x03, 0x03, 0x11, 0x67, 0x00, 0x00, 0x00, 0x00,
-		0x45, 0x00, 0x00, 0x9f, 0xe6, 0x8f, 0x40, 0x00, 0x40, 0x11, 0x00, 0x00, 0xc0, 0xa8, 0x01, 0x1a,
-		0xc0, 0xa8, 0x01, 0x0a, 0xaf, 0x78, 0x00, 0xa2, 0x00, 0x8b, 0x0b, 0x3a, 0x00, 0x00, 0x68, 0x00,
-		0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x6c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x74, 0x3a,
-		0x05, 0x00, 0xca, 0x94, 0x67, 0x0c, 0x01, 0x00, 0x1c, 0x00, 0x43, 0x6f, 0x75, 0x6e, 0x74, 0x65,
-		0x72, 0x73, 0x20, 0x70, 0x72, 0x6f, 0x76, 0x69, 0x64, 0x65, 0x64, 0x20, 0x62, 0x79, 0x20, 0x64,
-		0x75, 0x6d, 0x70, 0x63, 0x61, 0x70, 0x02, 0x00, 0x08, 0x00, 0x74, 0x3a, 0x05, 0x00, 0xdf, 0xba,
-		0x27, 0x0c, 0x03, 0x00, 0x08, 0x00, 0x74, 0x3a, 0x05, 0x00, 0x18, 0x94, 0x67, 0x0c, 0x04, 0x00,
-		0x08, 0x00, 0x0c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0x08, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x6c, 0x00, 0x00, 0x00,
+		0x03, 0x04, 0x05,
 	}
 }
 
@@ -2003,20 +1942,6 @@ func snmpv3HelloResponse() []byte {
 		0x0f, 0x06, 0x0a, 0x2b, 0x06, 0x01, 0x06, 0x03,
 		0x0f, 0x01, 0x01, 0x04, 0x00, 0x41, 0x01, 0x15,
 	}
-}
-
-// dump bytes in one row, up to about screen width. Returns a string
-// rather than writing to the debugging log.
-func dumpBytes2(desc string, bb []byte, cursor int) string {
-	cursor = max(cursor-4, 0) // give some context to dump
-	result := desc
-	for i, b := range bb[cursor:] {
-		if i > 30 { // about screen width...
-			break
-		}
-		result += fmt.Sprintf(" %02x", b)
-	}
-	return result
 }
 
 // TestMarshalVarbindRoundTrip verifies that marshaled varbinds can be parsed back correctly
