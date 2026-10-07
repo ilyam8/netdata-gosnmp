@@ -61,7 +61,7 @@ type testsEnmarshalVarbindPosition struct {
 	start    int
 	finish   int
 	pduType  Asn1BER
-	pduValue interface{}
+	pduValue any
 }
 
 type testsEnmarshalT struct {
@@ -2056,10 +2056,7 @@ func snmpv3HelloResponse() []byte {
 func dumpBytes1(data []byte, msg string, maxlength int) {
 	var buffer bytes.Buffer
 	buffer.WriteString(msg)
-	length := maxlength
-	if len(data) < maxlength {
-		length = len(data)
-	}
+	length := min(len(data), maxlength)
 	length *= 2 // One Byte Symbols Two Hex
 	hexStr := hex.EncodeToString(data)
 	for i := 0; length >= i+16; i += 16 {
@@ -2098,10 +2095,7 @@ func dumpBytes1(data []byte, msg string, maxlength int) {
 // dump bytes in one row, up to about screen width. Returns a string
 // rather than (dumpBytes1) writing to debugging log.
 func dumpBytes2(desc string, bb []byte, cursor int) string {
-	cursor = cursor - 4 // give some context to dump
-	if cursor < 0 {
-		cursor = 0
-	}
+	cursor = max(cursor-4, 0) // give some context to dump
 	result := desc
 	for i, b := range bb[cursor:] {
 		if i > 30 { // about screen width...
@@ -2121,7 +2115,7 @@ func TestMarshalVarbindRoundTrip(t *testing.T) {
 	// Base .1.3.6.1.4.1 = 5 bytes, each 268435455 = 4 bytes, each 127 = 1 byte
 	// 5 + (30 * 4) + 3 = 128 bytes
 	largeOID := ".1.3.6.1.4.1"
-	for i := 0; i < 30; i++ {
+	for range 30 {
 		largeOID += ".268435455"
 	}
 	largeOID += ".127.127.127"

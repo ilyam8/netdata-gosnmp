@@ -81,9 +81,6 @@ jobs:
           - "amd64"
           - "386"
         go_version:
-          - "1.24.x"
-          - "1.25.x"
-          - "1.26.x"
           - "1.27.x"
     env:
       GOARCH: ${{ matrix.go_arch }}

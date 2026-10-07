@@ -445,7 +445,7 @@ func TestMarshalUint32(t *testing.T) {
 
 func TestMarshalUint64(t *testing.T) {
 	tests := []struct {
-		value    interface{}
+		value    any
 		expected []byte
 	}{
 		// RFC 2578 Section 7.1.15: Counter64 is an unsigned 64-bit integer.

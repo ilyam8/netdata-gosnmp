@@ -964,9 +964,9 @@ type testLogger struct {
 	out     chan bool
 }
 
-func (l *testLogger) Print(v ...interface{}) {
+func (l *testLogger) Print(v ...any) {
 	if l.t != nil {
-		l.t.Log(append([]interface{}{l.prefix}, v)...)
+		l.t.Log(append([]any{l.prefix}, v)...)
 	}
 
 	if l.matcher != "" && l.out != nil {
@@ -979,7 +979,7 @@ func (l *testLogger) Print(v ...interface{}) {
 	}
 }
 
-func (l *testLogger) Printf(format string, v ...interface{}) {
+func (l *testLogger) Printf(format string, v ...any) {
 	if l.t != nil {
 		l.t.Logf(l.prefix+format, v...)
 	}
