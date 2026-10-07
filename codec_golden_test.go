@@ -7,9 +7,11 @@ package gosnmp
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -249,13 +251,50 @@ func dumpError(err error) string {
 	return "error (" + strings.Join(matched, ", ") + ")"
 }
 
-// catchPanic runs fn and reports whether it panicked.
-func catchPanic(fn func()) (panicked bool) {
-	defer func() {
-		if recover() != nil {
-			panicked = true
-		}
+// observe runs fn and reports whether it panicked and whether it wrote to
+// os.Stdout, which the library does when it recovers from some panics.
+func observe(fn func()) (panicked, wroteStdout bool) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		panic(err)
+	}
+	written := make(chan int64)
+	go func() {
+		n, _ := io.Copy(io.Discard, r)
+		_ = r.Close()
+		written <- n
 	}()
-	fn()
-	return false
+
+	stdout := os.Stdout
+	os.Stdout = w
+	func() {
+		defer func() {
+			if recover() != nil {
+				panicked = true
+			}
+		}()
+		fn()
+	}()
+	os.Stdout = stdout
+	_ = w.Close()
+
+	return panicked, <-written > 0
+}
+
+// dumpBytesLimit is the length above which dumpBytes abbreviates its output.
+const dumpBytesLimit = 1024
+
+// dumpBytes prints a byte slice in hex, telling nil and empty apart. Long
+// slices are pinned by their first bytes, length and SHA-256.
+func dumpBytes(b []byte) string {
+	switch {
+	case b == nil:
+		return "nil"
+	case len(b) == 0:
+		return "empty"
+	case len(b) > dumpBytesLimit:
+		return fmt.Sprintf("%x... (%d bytes, sha256 %x)", b[:64], len(b), sha256.Sum256(b))
+	default:
+		return fmt.Sprintf("%x", b)
+	}
 }

@@ -51,20 +51,29 @@ func dumpDecode(c decodeCase) string {
 	in := bytes.Clone(c.in)
 	var p *SnmpPacket
 	var err error
-	if catchPanic(func() { p, err = x.SnmpDecodePacket(in) }) {
-		return "decode: panic"
-	}
-	if err != nil {
-		return "decode: " + dumpError(err)
-	}
+	panicked, wroteStdout := observe(func() { p, err = x.SnmpDecodePacket(in) })
 
 	var d dumpWriter
-	d.line("decode: ok")
+	switch {
+	case panicked:
+		d.line("decode: panic")
+	case err != nil:
+		d.line("decode: " + dumpError(err))
+	default:
+		d.line("decode: ok")
+	}
+	if wroteStdout {
+		d.line("stdout: written")
+	}
+	if panicked || err != nil {
+		return d.String()
+	}
+
 	if !bytes.Equal(in, c.in) {
 		d.line("input: modified")
 	}
 	dumpPacket(&d, p)
-	d.line("reencode: " + dumpReencode(p, c.in))
+	dumpReencode(&d, p, c.in)
 	return d.String()
 }
 
@@ -139,19 +148,23 @@ func dumpValue(v any) string {
 	}
 }
 
-func dumpReencode(p *SnmpPacket, original []byte) string {
+func dumpReencode(d *dumpWriter, p *SnmpPacket, original []byte) {
 	var out []byte
 	var err error
-	if catchPanic(func() { out, err = p.MarshalMsg() }) {
-		return "panic"
+	panicked, wroteStdout := observe(func() { out, err = p.MarshalMsg() })
+	switch {
+	case panicked:
+		d.line("reencode: panic")
+	case err != nil:
+		d.line("reencode: " + dumpError(err))
+	case bytes.Equal(out, original):
+		d.line("reencode: identical")
+	default:
+		d.line("reencode: " + dumpBytes(out))
 	}
-	if err != nil {
-		return dumpError(err)
+	if wroteStdout {
+		d.line("reencode-stdout: written")
 	}
-	if bytes.Equal(out, original) {
-		return "identical"
-	}
-	return fmt.Sprintf("%x", out)
 }
 
 // -- fixtures -----------------------------------------------------------------
