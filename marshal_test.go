@@ -773,27 +773,6 @@ func TestUnmarshalErrors(t *testing.T) {
 	}
 }
 
-func FuzzUnmarshal(f *testing.F) {
-	for _, test := range testsUnmarshalErr {
-		f.Add(test.in())
-	}
-
-	for _, test := range testsUnmarshal {
-		f.Add(test.in())
-	}
-
-	vhandle := GoSNMP{}
-	vhandle.Logger = NewLogger(log.New(io.Discard, "", 0))
-	f.Fuzz(func(t *testing.T, data []byte) {
-		stime := time.Now()
-		_, _ = vhandle.SnmpDecodePacket(data)
-
-		if e := time.Since(stime); e > (time.Second * 1) {
-			t.Errorf("SnmpDecodePacket() took too long: %s", e)
-		}
-	})
-}
-
 // unmarshalView holds the decoded packet fields that TestUnmarshal compares,
 // including the exact Go type of every varbind value.
 type unmarshalView struct {

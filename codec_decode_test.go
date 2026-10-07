@@ -169,7 +169,7 @@ func dumpReencode(d *dumpWriter, p *SnmpPacket, original []byte) {
 
 // -- fixtures -----------------------------------------------------------------
 
-func decodeFixtureCases(t *testing.T) []decodeCase {
+func decodeFixtureCases(t testing.TB) []decodeCase {
 	t.Helper()
 
 	var fixtures []func() []byte
@@ -219,7 +219,7 @@ func fixtureFuncName(f func() []byte) string {
 }
 
 // decodeFuzzCorpusCases returns the checked-in FuzzUnmarshal corpus.
-func decodeFuzzCorpusCases(t *testing.T) []decodeCase {
+func decodeFuzzCorpusCases(t testing.TB) []decodeCase {
 	t.Helper()
 
 	dir := filepath.Join("testdata", "fuzz", "FuzzUnmarshal")
