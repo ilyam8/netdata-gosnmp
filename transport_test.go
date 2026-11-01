@@ -9,150 +9,68 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
-	"math/rand/v2"
 	"net"
 	"os"
-	"runtime"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/netdata/gosnmp/internal/ber"
 )
 
 // connectResult is what TestConnect observes of a Connect.
 type connectResult struct {
 	err       string // "" for no error
-	transport string // Transport after the Connect
-	network   string // the network of the connection the client opened
 	connected bool   // Conn is set
 	local     string // the IP of Conn's local address
-	controls  []string
 }
 
-// TestConnect pins how Connect, ConnectIPv4 and ConnectIPv6 validate the
-// client, choose the network and dial, on loopback sockets: Transport keeps
-// its value (Connect fills in "udp" when it is empty), the network gets the
-// suffix and the narrowing.
+// TestConnect pins how Connect validates the client and dials, on a loopback
+// socket.
 func TestConnect(t *testing.T) {
 	udpPort := unusedUDPPort(t)
-	tcp, err := net.Listen("tcp4", "127.0.0.1:0")
-	require.NoError(t, err)
-	defer tcp.Close()
-	tcpPort := tcp.Addr().(*net.TCPAddr).Port
-
-	recordControl := func(x *GoSNMP, got *connectResult, sleep time.Duration) {
-		x.Control = func(network, _ string, _ syscall.RawConn) error {
-			got.controls = append(got.controls, network)
-			time.Sleep(sleep)
-			return nil
-		}
-	}
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	tests := map[string]struct {
-		setup   func(x *GoSNMP, got *connectResult)
-		connect func(x *GoSNMP) error
-		unix    bool // the dial checks its context after a UDP connect only on Unix
-		want    connectResult
+		setup func(x *GoSNMP)
+		want  connectResult
 	}{
 		"udp": {
-			want: connectResult{transport: "udp", network: "udp", connected: true, local: "127.0.0.1"},
-		},
-		"udp with an IPv4 local address": {
-			setup: func(x *GoSNMP, _ *connectResult) { x.LocalAddr = "127.0.0.1:0" },
-			want:  connectResult{transport: "udp", network: "udp4", connected: true, local: "127.0.0.1"},
-		},
-		"tcp with an IPv4 local address": {
-			setup: func(x *GoSNMP, _ *connectResult) {
-				x.Transport, x.LocalAddr, x.Port = "tcp", "127.0.0.1:0", uint16(tcpPort) //nolint:gosec // a loopback port
-			},
-			want: connectResult{transport: "tcp", network: "tcp4", connected: true, local: "127.0.0.1"},
-		},
-		"ConnectIPv4": {
-			connect: (*GoSNMP).ConnectIPv4,
-			want:    connectResult{transport: "udp", network: "udp4", connected: true, local: "127.0.0.1"},
-		},
-		"ConnectIPv4 twice": {
-			connect: func(x *GoSNMP) error {
-				if err := x.ConnectIPv4(); err != nil {
-					return err
-				}
-				_ = x.Conn.Close()
-				return x.ConnectIPv4()
-			},
-			want: connectResult{transport: "udp", network: "udp4", connected: true, local: "127.0.0.1"},
-		},
-		"ConnectIPv6 to an IPv4 target": {
-			connect: (*GoSNMP).ConnectIPv6,
-			want: connectResult{
-				err:       "error establishing connection to host: dial udp6: address 127.0.0.1: no suitable address found",
-				transport: "udp",
-			},
+			want: connectResult{connected: true, local: "127.0.0.1"},
 		},
 		"invalid parameters": {
-			setup: func(x *GoSNMP, _ *connectResult) { x.MaxOids = -1 },
-			want:  connectResult{err: "field MaxOids cannot be less than 0", transport: "udp"},
-		},
-		"Control": {
-			setup: func(x *GoSNMP, got *connectResult) { recordControl(x, got, 0) },
-			want:  connectResult{transport: "udp", network: "udp", connected: true, local: "127.0.0.1", controls: []string{"udp4"}},
-		},
-		"dial timeout": {
-			unix: true,
-			setup: func(x *GoSNMP, got *connectResult) {
-				x.Timeout = 20 * time.Millisecond
-				recordControl(x, got, 200*time.Millisecond)
-			},
-			want: connectResult{
-				err:       "error establishing connection to host: dial udp :0->127.0.0.1:" + strconv.Itoa(int(udpPort)) + ": i/o timeout",
-				transport: "udp", controls: []string{"udp4"},
-			},
+			setup: func(x *GoSNMP) { x.MaxOids = -1 },
+			want:  connectResult{err: "field MaxOids cannot be less than 0"},
 		},
 		"negative timeout": {
-			setup: func(x *GoSNMP, _ *connectResult) { x.Timeout = -time.Second },
+			setup: func(x *GoSNMP) { x.Timeout = -time.Second },
 			want: connectResult{
-				err:       "error establishing connection to host: dial udp :0->127.0.0.1:" + strconv.Itoa(int(udpPort)) + ": i/o timeout",
-				transport: "udp",
+				err: "error establishing connection to host: dial udp 127.0.0.1:" + strconv.Itoa(int(udpPort)) + ": i/o timeout",
 			},
 		},
 		"canceled context": {
-			setup: func(x *GoSNMP, _ *connectResult) { x.Context = canceled },
+			setup: func(x *GoSNMP) { x.Context = canceled },
 			want: connectResult{
-				err:       "error establishing connection to host: dial udp :0->127.0.0.1:" + strconv.Itoa(int(udpPort)) + ": operation was canceled",
-				transport: "udp",
+				err: "error establishing connection to host: dial udp 127.0.0.1:" + strconv.Itoa(int(udpPort)) + ": operation was canceled",
 			},
 		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			if tc.unix && runtime.GOOS == "windows" {
-				t.Skip("Windows dials UDP without checking the context after connect")
-			}
 			x := &GoSNMP{Target: "127.0.0.1", Port: udpPort, Version: Version2c, Community: "public", Timeout: time.Second}
-			var got connectResult
 			if tc.setup != nil {
-				tc.setup(x, &got)
+				tc.setup(x)
 			}
-			connect := tc.connect
-			if connect == nil {
-				connect = (*GoSNMP).Connect
-			}
-			if err := connect(x); err != nil {
+			var got connectResult
+			if err := x.Connect(); err != nil {
 				got.err = err.Error()
 			}
-			got.transport, got.network = x.Transport, x.opened.dial.network
 			if x.Conn != nil {
 				got.connected = true
 				host, _, err := net.SplitHostPort(x.Conn.LocalAddr().String())
@@ -165,23 +83,8 @@ func TestConnect(t *testing.T) {
 	}
 }
 
-// TestConnectUnconnectedUDPListenFailure pins what Connect leaves when the
-// unconnected UDP socket cannot be opened: its error, and no connection.
-func TestConnectUnconnectedUDPListenFailure(t *testing.T) {
-	x := &GoSNMP{
-		Target: "127.0.0.1", Port: 161, Version: Version2c, Community: "public", Timeout: time.Second,
-		UseUnconnectedUDPSocket: true,
-		LocalAddr:               "192.0.2.1:0", // TEST-NET-1: no local interface has it
-	}
-	err := x.Connect()
-	assert.ErrorContains(t, err, "error establishing connection to host: listen udp4 192.0.2.1:0")
-	assert.Equal(t, [2]string{"udp", ""}, [2]string{x.Transport, x.opened.dial.network}, "Transport, network")
-	assert.Nil(t, x.Conn)
-}
-
-// packetConnWrapper wraps an unconnected UDP socket, as a caller may to
-// instrument it: a net.Conn and a net.PacketConn of another type than the
-// socket's.
+// packetConnWrapper wraps a UDP socket, as a caller may to instrument it: a
+// net.Conn and a net.PacketConn of another type than the socket's.
 type packetConnWrapper struct {
 	net.Conn
 	pc net.PacketConn
@@ -193,25 +96,17 @@ func (w packetConnWrapper) WriteTo(b []byte, addr net.Addr) (int, error) {
 	return w.pc.WriteTo(b, addr)
 }
 
-// TestUnconnectedUDPAgentAddress checks where a client in unconnected UDP mode
-// sends a request after Port changed from agent A's to agent B's: to the
-// address the last Connect resolved (A's), from the socket Connect opened and
-// from a Conn the caller set, also after Close; a caller's socket without such
-// a Connect has no address, and a connected socket the caller set with
-// UseUnconnectedUDPSocket off writes to its peer.
-func TestUnconnectedUDPAgentAddress(t *testing.T) {
-	callerSocket := func(t *testing.T) net.Conn {
-		pc, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+// TestUDPAgentAddress checks where a request goes after Port changed from
+// agent A's to agent B's: to A from the socket Connect dialed and from a
+// wrapper of it, whose peer the dial fixed; to its own peer from a connected
+// socket the caller set, also after Close; an unconnected socket the caller
+// set has no peer, and the request fails.
+func TestUDPAgentAddress(t *testing.T) {
+	connectedTo := func(t *testing.T, port uint16) net.Conn {
+		conn, err := net.DialUDP("udp4", nil, &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: int(port)})
 		require.NoError(t, err)
-		t.Cleanup(func() { _ = pc.Close() })
-		return pc
-	}
-	// replaceConn sets conn in place of the client's connection, which is the
-	// caller's again.
-	replaceConn := func(t *testing.T, x *GoSNMP, conn net.Conn) {
-		replaced := x.Conn
-		t.Cleanup(func() { _ = replaced.Close() })
-		x.Conn = conn
+		t.Cleanup(func() { _ = conn.Close() })
+		return conn
 	}
 	tests := map[string]struct {
 		// conn gives the client its connection; portB is agent B's port.
@@ -225,32 +120,22 @@ func TestUnconnectedUDPAgentAddress(t *testing.T) {
 			require.NoError(t, x.Connect())
 			x.Conn = packetConnWrapper{Conn: x.Conn, pc: x.Conn.(net.PacketConn)}
 		}},
-		"a socket the caller opened after Connect": {want: "A", conn: func(t *testing.T, x *GoSNMP, _ uint16) {
+		"a connected socket the caller set after Connect": {want: "B", conn: func(t *testing.T, x *GoSNMP, portB uint16) {
 			require.NoError(t, x.Connect())
-			replaceConn(t, x, callerSocket(t))
+			replaced := x.Conn
+			t.Cleanup(func() { _ = replaced.Close() })
+			x.Conn = connectedTo(t, portB)
 		}},
-		"a socket the caller opened after Connect and Close": {want: "A", conn: func(t *testing.T, x *GoSNMP, _ uint16) {
+		"a connected socket the caller set after Close": {want: "B", conn: func(t *testing.T, x *GoSNMP, portB uint16) {
 			require.NoError(t, x.Connect())
 			require.NoError(t, x.Close())
-			x.Conn = callerSocket(t)
+			x.Conn = connectedTo(t, portB)
 		}},
-		"a socket the caller opened without Connect": {conn: func(t *testing.T, x *GoSNMP, _ uint16) {
-			x.Conn = callerSocket(t)
-		}},
-		"a socket the caller opened after a Connect in connected mode": {conn: func(t *testing.T, x *GoSNMP, _ uint16) {
-			require.NoError(t, x.Connect())
-			x.UseUnconnectedUDPSocket = false
-			require.NoError(t, x.Connect())
-			x.UseUnconnectedUDPSocket = true
-			replaceConn(t, x, callerSocket(t))
-		}},
-		"a connected socket the caller set in connected mode": {want: "B", conn: func(t *testing.T, x *GoSNMP, portB uint16) {
-			require.NoError(t, x.Connect())
-			x.UseUnconnectedUDPSocket = false
-			conn, err := net.DialUDP("udp4", nil, &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: int(portB)})
+		"an unconnected socket the caller set": {conn: func(t *testing.T, x *GoSNMP, _ uint16) {
+			pc, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 			require.NoError(t, err)
-			t.Cleanup(func() { _ = conn.Close() })
-			replaceConn(t, x, conn)
+			t.Cleanup(func() { _ = pc.Close() })
+			x.Conn = pc
 		}},
 	}
 	agent := func(name string) uint16 {
@@ -264,7 +149,7 @@ func TestUnconnectedUDPAgentAddress(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			x := &GoSNMP{
 				Target: "127.0.0.1", Port: portA, Version: Version2c, Community: "public",
-				Timeout: 500 * time.Millisecond, MaxOids: MaxOids, UseUnconnectedUDPSocket: true,
+				Timeout: 500 * time.Millisecond, MaxOids: MaxOids,
 			}
 			tc.conn(t, x, portB)
 			defer x.Close()
@@ -282,13 +167,62 @@ func TestUnconnectedUDPAgentAddress(t *testing.T) {
 	}
 }
 
-// TestUnconnectedUDPWrapperIPv6 checks that a wrapper of the unconnected
-// socket ConnectIPv6 opened writes to the IPv6 address ConnectIPv6 resolved
-// for a Target that has an IPv4 one too.
-func TestUnconnectedUDPWrapperIPv6(t *testing.T) {
-	if _, err := net.ResolveUDPAddr("udp6", "localhost:161"); err != nil {
-		t.Skipf("localhost has no IPv6 address: %v", err)
+// TestRequestResolvesNoName checks that a request resolves no name: after
+// Target changed to a name since Connect, it goes over the socket Connect
+// dialed, with no lookup.
+func TestRequestResolvesNoName(t *testing.T) {
+	var lookups atomic.Int32
+	defaultResolver := net.DefaultResolver
+	net.DefaultResolver = &net.Resolver{PreferGo: true, Dial: func(context.Context, string, string) (net.Conn, error) {
+		lookups.Add(1)
+		return nil, errors.New("codec: no lookups during a request")
+	}}
+	defer func() { net.DefaultResolver = defaultResolver }()
+
+	port, _ := udpAgent(t, func(_ int, req []byte) []byte { return replyTo(req, nil, sysDescr) })
+	x := &GoSNMP{
+		Target: "127.0.0.1", Port: port, Version: Version2c, Community: "public",
+		Timeout: 500 * time.Millisecond,
 	}
+	require.NoError(t, x.Connect())
+	defer x.Close()
+	x.Target = "agent.invalid"
+
+	_, err := x.Get([]string{engineOID})
+	require.NoError(t, err)
+	assert.Equal(t, int32(0), lookups.Load(), "lookups")
+}
+
+// TestRetryUsesConnReplacedByHook checks that each attempt of a request uses
+// the connection Conn holds when it starts: after the first attempt times out
+// on agent A, which never answers, OnRetry sets Conn to a socket connected to
+// agent B, which answers the retry.
+func TestRetryUsesConnReplacedByHook(t *testing.T) {
+	portA, _ := udpAgent(t, func(int, []byte) []byte { return nil })
+	portB, _ := udpAgent(t, func(_ int, req []byte) []byte { return replyTo(req, nil, sysDescr) })
+	x := &GoSNMP{
+		Target: "127.0.0.1", Port: portA, Version: Version2c, Community: "public",
+		Timeout: 200 * time.Millisecond, Retries: 1,
+	}
+	require.NoError(t, x.Connect())
+	first := x.Conn
+	defer first.Close()
+	defer x.Close()
+	x.OnRetry = func(x *GoSNMP) {
+		x.OnRetry = nil
+		conn, err := net.DialUDP("udp4", nil, &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: int(portB)})
+		require.NoError(t, err)
+		x.Conn = conn
+	}
+
+	res, err := x.Get([]string{engineOID})
+	require.NoError(t, err)
+	assert.Equal(t, []SnmpPDU{sysDescr}, res.Variables)
+}
+
+// TestConnectIPv6Target checks a request to an agent on the IPv6 loopback
+// address: Connect dials Target "::1" over IPv6, and the agent answers.
+func TestConnectIPv6Target(t *testing.T) {
 	agent, err := net.ListenUDP("udp6", &net.UDPAddr{IP: net.IPv6loopback})
 	if err != nil {
 		t.Skipf("no IPv6 loopback: %v", err)
@@ -310,43 +244,35 @@ func TestUnconnectedUDPWrapperIPv6(t *testing.T) {
 		<-served
 	}()
 	x := &GoSNMP{
-		Target: "localhost", Port: uint16(agent.LocalAddr().(*net.UDPAddr).Port), //nolint:gosec // a UDP port
-		Version: Version2c, Community: "public", Timeout: 500 * time.Millisecond, UseUnconnectedUDPSocket: true,
-	}
-	require.NoError(t, x.ConnectIPv6())
-	defer x.Close()
-	_, err = x.Get([]string{engineOID})
-	require.NoError(t, err, "the socket ConnectIPv6 opened")
-	x.Conn = packetConnWrapper{Conn: x.Conn, pc: x.Conn.(net.PacketConn)}
-	_, err = x.Get([]string{engineOID})
-	require.NoError(t, err, "a wrapper of it")
-}
-
-// TestUnconnectedUDPNoLookup checks that a request over a Conn the caller set
-// in unconnected UDP mode resolves no name: after Target changed to a name
-// since Connect, it writes to the address Connect resolved, with no lookup.
-func TestUnconnectedUDPNoLookup(t *testing.T) {
-	var lookups atomic.Int32
-	defaultResolver := net.DefaultResolver
-	net.DefaultResolver = &net.Resolver{PreferGo: true, Dial: func(context.Context, string, string) (net.Conn, error) {
-		lookups.Add(1)
-		return nil, errors.New("codec: no lookups during a request")
-	}}
-	defer func() { net.DefaultResolver = defaultResolver }()
-
-	port, _ := udpAgent(t, func(_ int, req []byte) []byte { return replyTo(req, nil, sysDescr) })
-	x := &GoSNMP{
-		Target: "127.0.0.1", Port: port, Version: Version2c, Community: "public",
-		Timeout: 500 * time.Millisecond, UseUnconnectedUDPSocket: true,
+		Target: "::1", Port: uint16(agent.LocalAddr().(*net.UDPAddr).Port), //nolint:gosec // a UDP port
+		Version: Version2c, Community: "public", Timeout: 500 * time.Millisecond,
 	}
 	require.NoError(t, x.Connect())
 	defer x.Close()
-	x.Conn = packetConnWrapper{Conn: x.Conn, pc: x.Conn.(net.PacketConn)}
-	x.Target = "agent.invalid"
+	assert.True(t, x.Conn.RemoteAddr().(*net.UDPAddr).IP.Equal(net.IPv6loopback), "remote %v", x.Conn.RemoteAddr())
 
-	_, err := x.Get([]string{engineOID})
+	res, err := x.Get([]string{engineOID})
 	require.NoError(t, err)
-	assert.Equal(t, int32(0), lookups.Load(), "lookups")
+	assert.Equal(t, []SnmpPDU{sysDescr}, res.Variables)
+}
+
+// TestConnectedSocketOtherSource checks that the socket Connect dials takes
+// replies from the agent's address only: replies sent from another socket do
+// not reach the request, which times out.
+func TestConnectedSocketOtherSource(t *testing.T) {
+	srvr, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	require.NoError(t, err)
+	defer srvr.Close()
+	x := &GoSNMP{
+		Target: "127.0.0.1", Port: uint16(srvr.LocalAddr().(*net.UDPAddr).Port), //nolint:gosec // a UDP port
+		Version: Version2c, Community: "public", Timeout: 100 * time.Millisecond, Retries: 2,
+	}
+	require.NoError(t, x.Connect())
+	defer x.Close()
+	go serveGetResponses(t, srvr, x, sendFromNewSocket)
+
+	_, err = x.Get([]string{".1.2"})
+	assert.ErrorIs(t, err, os.ErrDeadlineExceeded)
 }
 
 // stubDNS is net.DefaultResolver for a test: a Go resolver whose DNS server
@@ -444,17 +370,10 @@ func (dns *stubDNS) awaitHeld(t *testing.T) {
 	}
 }
 
-// TestConnectLookupWithinBounds checks that Connect looks up every name, the
-// local address's, an unconnected socket's agent and the dialed agent, within
-// its Context and Timeout: a lookup that does not end fails Connect once the
-// Context is canceled or the Timeout passes, with an error that matches it.
+// TestConnectLookupWithinBounds checks that Connect looks up the agent's name
+// within its Context and Timeout: a lookup that does not end fails Connect once
+// the Context is canceled or the Timeout passes, with an error that matches it.
 func TestConnectLookupWithinBounds(t *testing.T) {
-	settings := map[string]func(x *GoSNMP){
-		"TCP local address":     func(x *GoSNMP) { x.Transport, x.LocalAddr = "tcp", "bind.codec.invalid.:0" },
-		"UDP local address":     func(x *GoSNMP) { x.LocalAddr = "bind.codec.invalid.:0" },
-		"unconnected UDP agent": func(x *GoSNMP) { x.Target, x.UseUnconnectedUDPSocket = "agent.codec.invalid.", true },
-		"TCP agent":             func(x *GoSNMP) { x.Transport, x.Target = "tcp", "agent.codec.invalid." },
-	}
 	bounds := map[string]struct {
 		timeout time.Duration
 		cancel  bool
@@ -463,189 +382,32 @@ func TestConnectLookupWithinBounds(t *testing.T) {
 		"canceled Context": {timeout: time.Minute, cancel: true, want: context.Canceled},
 		"Timeout":          {timeout: 50 * time.Millisecond, want: context.DeadlineExceeded},
 	}
-	for settingsName, set := range settings {
-		for boundName, bound := range bounds {
-			t.Run(settingsName+", "+boundName, func(t *testing.T) {
-				dns := newStubDNS(t)
-				dns.answering.Store(false)
-				ctx, cancel := context.WithCancel(context.Background())
-				defer cancel()
-				x := &GoSNMP{
-					Target: "127.0.0.1", Port: 161, Version: Version2c, Community: "public",
-					Timeout: bound.timeout, Context: ctx,
-				}
-				set(x)
-				result := make(chan error, 1)
-				go func() { result <- x.Connect() }()
-				dns.awaitHeld(t)
-				if bound.cancel {
-					cancel()
-				}
-				select {
-				case err := <-result:
-					assert.ErrorIs(t, err, bound.want)
-				case <-time.After(2 * time.Second):
-					dns.release()
-					t.Errorf("Connect waits for the lookup; after its release: %v", <-result)
-				}
-				assert.Nil(t, x.Conn)
-			})
-		}
-	}
-}
-
-// TestResolveAddrMatchesStdlib checks resolveAddr against net.ResolveUDPAddr
-// and net.ResolveTCPAddr, which it follows within a Context, over a stub DNS
-// that has an IPv4 address only: the same address or error for each network
-// and address.
-func TestResolveAddrMatchesStdlib(t *testing.T) {
-	newStubDNS(t)
-	addresses := []string{
-		"", ":0", ":161", ":snmp", "127.0.0.1:0", "127.0.0.1:161", "0.0.0.0:0", "[::1]:161", "[::]:0",
-		"[fe80::1%lo0]:161", "[::ffff:127.0.0.1]:161", "agent.codec.invalid.:161", "[agent.codec.invalid.]:161",
-		"127.0.0.1", "127.0.0.1:99999", "127.0.0.1:no-such-service", "[::1:161",
-	}
-	describe := func(addr net.Addr, err error) string {
-		if err != nil {
-			return "error: " + err.Error()
-		}
-		return addr.String()
-	}
-	for _, network := range []string{"udp", "udp4", "udp6", "tcp", "tcp4", "tcp6"} {
-		for _, address := range addresses {
-			ip, port, err := resolveAddr(context.Background(), net.DefaultResolver, network, address)
-			var got, want string
-			if strings.HasPrefix(network, "udp") {
-				got = describe(&net.UDPAddr{IP: ip.IP, Port: port, Zone: ip.Zone}, err)
-				want = describe(net.ResolveUDPAddr(network, address))
-			} else {
-				got = describe(&net.TCPAddr{IP: ip.IP, Port: port, Zone: ip.Zone}, err)
-				want = describe(net.ResolveTCPAddr(network, address))
-			}
-			assert.Equal(t, want, got, "%s %q", network, address)
-		}
-	}
-}
-
-// hostsResolver answers lookups from a table, as a hosts file does, zones
-// included; its LookupIP, as *net.Resolver's does, keeps the addresses of the
-// family asked for, fails when none is left and drops the zones.
-type hostsResolver map[string][]net.IPAddr
-
-func (r hostsResolver) LookupPort(_ context.Context, _, service string) (int, error) {
-	return strconv.Atoi(service)
-}
-
-func (r hostsResolver) LookupIPAddr(_ context.Context, host string) ([]net.IPAddr, error) {
-	addrs, ok := r[host]
-	if !ok {
-		return nil, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
-	}
-	return slices.Clone(addrs), nil
-}
-
-func (r hostsResolver) LookupIP(ctx context.Context, network, host string) ([]net.IP, error) {
-	addrs, err := r.LookupIPAddr(ctx, host)
-	if err != nil {
-		return nil, err
-	}
-	var ips []net.IP
-	for _, a := range addrs {
-		if network == "ip" || (network == "ip4") == (a.IP.To4() != nil) {
-			ips = append(ips, a.IP)
-		}
-	}
-	if len(ips) == 0 {
-		return nil, &net.AddrError{Err: "no suitable address found", Addr: host}
-	}
-	return ips, nil
-}
-
-// TestResolveAddrZones checks that resolveAddr keeps the zone a hosts file
-// gives a name's scoped IPv6 address, on every network, as
-// net.ResolveUDPAddr and net.ResolveTCPAddr do, and picks a name's address
-// by their rules; the zones come from the lookup that keeps them.
-func TestResolveAddrZones(t *testing.T) {
-	linkLocal := net.ParseIP("fe80::1")
-	hosts := hostsResolver{
-		"scoped.invalid": {{IP: linkLocal, Zone: "lo0"}},
-		"mixed.invalid":  {{IP: net.ParseIP("127.0.0.1")}, {IP: linkLocal, Zone: "lo0"}},
-		"twice.invalid":  {{IP: linkLocal, Zone: "lo0"}, {IP: linkLocal, Zone: "en0"}},
-		"global.invalid": {{IP: net.ParseIP("2001:db8::1"), Zone: "en0"}},
-		"mlink.invalid":  {{IP: net.ParseIP("ff02::1"), Zone: "lo0"}},
-		"miface.invalid": {{IP: net.ParseIP("ff01::1"), Zone: "lo0"}},
-	}
-	tests := map[string]struct {
-		network, address string
-		want             string // the address, or the error's text
-	}{
-		"udp, a scoped address":            {network: "udp", address: "scoped.invalid:161", want: "[fe80::1%lo0]:161"},
-		"udp6, a scoped address":           {network: "udp6", address: "scoped.invalid:161", want: "[fe80::1%lo0]:161"},
-		"tcp6, a scoped address":           {network: "tcp6", address: "scoped.invalid:0", want: "[fe80::1%lo0]:0"},
-		"udp4, a scoped address":           {network: "udp4", address: "scoped.invalid:161", want: "address scoped.invalid: no suitable address found"},
-		"udp, IPv4 first":                  {network: "udp", address: "mixed.invalid:161", want: "127.0.0.1:161"},
-		"udp in brackets, IPv6":            {network: "udp", address: "[mixed.invalid]:161", want: "[fe80::1%lo0]:161"},
-		"udp6, mixed":                      {network: "udp6", address: "mixed.invalid:161", want: "[fe80::1%lo0]:161"},
-		"tcp4, mixed":                      {network: "tcp4", address: "mixed.invalid:161", want: "127.0.0.1:161"},
-		"udp6, one address with two zones": {network: "udp6", address: "twice.invalid:161", want: "[fe80::1%lo0]:161"},
-		"udp6, link-local multicast":       {network: "udp6", address: "mlink.invalid:161", want: "[ff02::1%lo0]:161"},
-		"udp6, interface-local multicast":  {network: "udp6", address: "miface.invalid:161", want: "[ff01::1%lo0]:161"},
-		"udp, a zoned global address":      {network: "udp", address: "global.invalid:161", want: "[2001:db8::1%en0]:161"},
-		// Dropped, an intended difference from the standard library, not a bug:
-		// no zone qualifies a global address (see lookupIPAddrs).
-		"udp6, a zoned global address": {network: "udp6", address: "global.invalid:161", want: "[2001:db8::1]:161"},
-	}
-	for name, tc := range tests {
+	for name, bound := range bounds {
 		t.Run(name, func(t *testing.T) {
-			ip, port, err := resolveAddr(context.Background(), hosts, tc.network, tc.address)
-			got := (&net.UDPAddr{IP: ip.IP, Port: port, Zone: ip.Zone}).String()
-			if err != nil {
-				got = err.Error()
+			dns := newStubDNS(t)
+			dns.answering.Store(false)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			x := &GoSNMP{
+				Target: "agent.codec.invalid.", Port: 161, Version: Version2c, Community: "public",
+				Timeout: bound.timeout, Context: ctx,
 			}
-			assert.Equal(t, tc.want, got)
+			result := make(chan error, 1)
+			go func() { result <- x.Connect() }()
+			dns.awaitHeld(t)
+			if bound.cancel {
+				cancel()
+			}
+			select {
+			case err := <-result:
+				assert.ErrorIs(t, err, bound.want)
+			case <-time.After(2 * time.Second):
+				dns.release()
+				t.Errorf("Connect waits for the lookup; after its release: %v", <-result)
+			}
+			assert.Nil(t, x.Conn)
 		})
 	}
-}
-
-// TestScopedIPv6 pins which addresses take a zone from a second lookup: the
-// IPv6 link-local and interface-local ones; an IPv4 link-local address takes
-// no second lookup.
-func TestScopedIPv6(t *testing.T) {
-	tests := map[string]bool{
-		"fe80::1":     true,  // link-local unicast
-		"ff02::1":     true,  // link-local multicast
-		"ff01::1":     true,  // interface-local multicast
-		"2001:db8::1": false, // global
-		"::1":         false, // loopback
-		"169.254.1.1": false, // IPv4 link-local
-		"127.0.0.1":   false,
-	}
-	for address, want := range tests {
-		t.Run(address, func(t *testing.T) {
-			assert.Equal(t, want, scopedIPv6(net.ParseIP(address)))
-		})
-	}
-}
-
-// TestConnectTCPLocalAddr pins that a TCP connection is made from the
-// configured local address, port included.
-func TestConnectTCPLocalAddr(t *testing.T) {
-	agent, err := net.Listen("tcp4", "127.0.0.1:0")
-	require.NoError(t, err)
-	defer agent.Close()
-	free, err := net.Listen("tcp4", "127.0.0.1:0")
-	require.NoError(t, err)
-	localPort := free.Addr().(*net.TCPAddr).Port
-	require.NoError(t, free.Close())
-
-	x := &GoSNMP{
-		Target: "127.0.0.1", Port: uint16(agent.Addr().(*net.TCPAddr).Port), //nolint:gosec // a loopback port
-		Transport: "tcp", LocalAddr: "127.0.0.1:" + strconv.Itoa(localPort),
-		Version: Version2c, Community: "public", Timeout: time.Second,
-	}
-	require.NoError(t, x.Connect())
-	defer x.Conn.Close()
-	assert.Equal(t, localPort, x.Conn.LocalAddr().(*net.TCPAddr).Port)
 }
 
 // closeErrConn is a connection whose Close fails.
@@ -718,7 +480,6 @@ func TestConnectReplacesConnection(t *testing.T) {
 		connNil   bool
 		firstOpen bool // the first connection is still open
 	}
-	errControl := errors.New("codec control refuses")
 	tests := map[string]struct {
 		failDial bool
 		want     outcome
@@ -740,7 +501,7 @@ func TestConnectReplacesConnection(t *testing.T) {
 			defer first.Close()
 			defer x.Close()
 			if tc.failDial {
-				x.Control = func(string, string, syscall.RawConn) error { return errControl }
+				x.Timeout = -time.Second
 			}
 			err = x.Connect()
 			assert.Equal(t, tc.want, outcome{
@@ -1057,56 +818,21 @@ func udpAgent(t *testing.T, handle func(n int, req []byte) []byte) (port uint16,
 	return uint16(pc.LocalAddr().(*net.UDPAddr).Port), read //nolint:gosec // a UDP port
 }
 
-// TestSameConn pins the rule the client uses to tell whether its connection
-// is still the one an attempt took or found lost (a TCP reopen's commit, the
-// lost mark): by ==, without panicking, and the same for two values == cannot
-// compare.
-func TestSameConn(t *testing.T) {
-	type wrapped struct{ net.Conn } // comparable, holding any connection
-	type otherUncomparable struct {
-		net.Conn
-		values []int
-	}
-	a, b := &net.TCPConn{}, &net.TCPConn{}
-	u1 := uncomparableConn{Conn: a, onClose: func() {}}
-	u2 := uncomparableConn{Conn: b, onClose: func() {}}
-	tests := map[string]struct {
-		conn, old net.Conn
-		want      bool
-	}{
-		"both nil":                     {want: true},
-		"no connection any more":       {old: a},
-		"the same pointer":             {conn: a, old: a, want: true},
-		"another pointer":              {conn: b, old: a},
-		"another type":                 {conn: u1, old: a},
-		"two values == cannot compare": {conn: u1, old: u2, want: true},
-		"two values == cannot compare, of two types":      {conn: otherUncomparable{Conn: a, values: []int{1}}, old: u1},
-		"a wrapper that cannot compare, another that can": {conn: wrapped{u1}, old: wrapped{a}},
-		"a wrapper that can, another that cannot":         {conn: wrapped{a}, old: wrapped{u1}},
-		"two wrappers of one pointer":                     {conn: wrapped{a}, old: wrapped{a}, want: true},
-	}
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			assert.Equal(t, tc.want, sameConn(tc.conn, tc.old))
-		})
-	}
-}
-
-// streamConn is a net.Conn whose reads hand out reads in turn: the octets of
+// scriptedConn is a net.Conn whose reads hand out reads in turn: the octets of
 // each, as many at a time as the caller's buffer takes, then its error. Past
 // the last read, reads fail with io.EOF. Only Read is implemented.
-type streamConn struct {
+type scriptedConn struct {
 	net.Conn
-	reads []streamRead
+	reads []scriptedRead
 }
 
-// streamRead is one read of a streamConn.
-type streamRead struct {
+// scriptedRead is one read of a scriptedConn.
+type scriptedRead struct {
 	data []byte
 	err  error
 }
 
-func (c *streamConn) Read(b []byte) (int, error) {
+func (c *scriptedConn) Read(b []byte) (int, error) {
 	if len(c.reads) == 0 {
 		return 0, io.EOF
 	}
@@ -1118,185 +844,4 @@ func (c *streamConn) Read(b []byte) (int, error) {
 	err := r.err
 	c.reads = c.reads[1:]
 	return n, err
-}
-
-// seqMessage is a SEQUENCE of n content octets.
-func seqMessage(n int) []byte {
-	b := ber.AppendHeader(nil, byte(Sequence), n)
-	for i := range n {
-		b = append(b, byte(i))
-	}
-	return b
-}
-
-// describeRead describes what readMessage returned, for a comparison.
-func describeRead(b []byte, err error) string {
-	if err != nil {
-		return "error: " + err.Error()
-	}
-	return fmt.Sprintf("% x", b)
-}
-
-// TestReadMessage pins how readMessage frames a TCP stream: the messages it
-// returns, one per call, and the errors of octets it cannot frame and of
-// reads that fail.
-func TestReadMessage(t *testing.T) {
-	msg := seqMessage(3)
-	tests := map[string]struct {
-		reads []streamRead
-		calls int
-		want  []string
-	}{
-		"two messages in one read": {
-			reads: []streamRead{{data: slices.Concat(msg, seqMessage(1))}},
-			calls: 3, want: []string{"30 03 00 01 02", "30 01 00", "error: EOF"},
-		},
-		"a message in reads of one octet": {
-			reads: []streamRead{{data: msg[:1]}, {data: msg[1:2]}, {data: msg[2:4]}, {data: msg[4:]}},
-			calls: 1, want: []string{"30 03 00 01 02"},
-		},
-		"a long-form header in parts": {
-			reads: []streamRead{{data: []byte{0x30}}, {data: []byte{0x82}}, {data: []byte{0x00}}, {data: []byte{0x03, 7, 8, 9}}},
-			calls: 1, want: []string{"30 82 00 03 07 08 09"},
-		},
-		"a read of nothing": {
-			reads: []streamRead{{}, {data: msg}},
-			calls: 1, want: []string{"30 03 00 01 02"},
-		},
-		"a message and an error in one read": {
-			reads: []streamRead{{data: msg, err: io.EOF}},
-			calls: 2, want: []string{"30 03 00 01 02", "error: EOF"},
-		},
-		"a timeout inside a message, then the rest": {
-			reads: []streamRead{{data: msg[:2], err: os.ErrDeadlineExceeded}, {data: msg[2:]}},
-			calls: 2, want: []string{"error: error reading from socket: i/o timeout", "30 03 00 01 02"},
-		},
-		"the stream's end inside a message": {
-			reads: []streamRead{{data: msg[:4]}},
-			calls: 1, want: []string{"error: EOF"},
-		},
-		"not a SEQUENCE": {
-			reads: []streamRead{{data: []byte{byte(OctetString), 1, 0}}},
-			calls: 1, want: []string{"error: lost the message framing of the TCP stream: a message starts with 0x04, not a SEQUENCE"},
-		},
-		"not a SEQUENCE, before a length octet arrives": {
-			reads: []streamRead{{data: []byte{byte(OctetString)}}, {err: os.ErrDeadlineExceeded}},
-			calls: 1, want: []string{"error: lost the message framing of the TCP stream: a message starts with 0x04, not a SEQUENCE"},
-		},
-		"a message, then octets that do not start one": {
-			reads: []streamRead{{data: slices.Concat(msg, []byte{byte(Integer), 1, 0})}},
-			calls: 2, want: []string{"30 03 00 01 02", "error: lost the message framing of the TCP stream: a message starts with 0x02, not a SEQUENCE"},
-		},
-		"the indefinite form": {
-			reads: []streamRead{{data: []byte{byte(Sequence), 0x80, byte(Null), 0, 0, 0}}},
-			calls: 1, want: []string{"error: lost the message framing of the TCP stream: invalid packet length: indefinite length encoding (0x80) is not permitted in SNMP"},
-		},
-		"nine length octets, before they arrive": {
-			reads: []streamRead{{data: []byte{byte(Sequence), 0x89}}, {err: os.ErrDeadlineExceeded}},
-			calls: 1, want: []string{"error: lost the message framing of the TCP stream: invalid packet length: more than 8 length octets"},
-		},
-		"a length past the largest uint64": {
-			reads: []streamRead{{data: []byte{byte(Sequence), 0x88, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}}},
-			calls: 1, want: []string{"error: lost the message framing of the TCP stream: invalid packet length: TLV length exceeds the remaining input"},
-		},
-		"longer than the buffer, before its content arrives": {
-			reads: []streamRead{{data: []byte{byte(Sequence), 0x82, 0xff, 0xfc}}, {err: os.ErrDeadlineExceeded}},
-			calls: 1, want: []string{"error: response buffer too small"},
-		},
-		"a header cut at the buffer's end": {
-			reads: []streamRead{{data: slices.Concat(seqMessage(rxBufSize-7), []byte{byte(Sequence), 0x82, 0x00})}, {data: []byte{0x03, 7, 8, 9}}},
-			calls: 2, want: []string{fmt.Sprintf("% x", seqMessage(rxBufSize-7)), "30 82 00 03 07 08 09"},
-		},
-		"as long as the buffer, after a message": {
-			reads: []streamRead{{data: slices.Concat(msg, seqMessage(rxBufSize-4))}},
-			calls: 2, want: []string{"30 03 00 01 02", fmt.Sprintf("% x", seqMessage(rxBufSize-4))},
-		},
-	}
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			conn := &streamConn{reads: tc.reads}
-			rx := new(receiveBuffer)
-			var got []string
-			for range tc.calls {
-				got = append(got, describeRead(rx.readMessage(conn)))
-			}
-			assert.Equal(t, tc.want, got)
-		})
-	}
-}
-
-// TestReadMessageSplits checks that readMessage returns the messages of a TCP
-// stream one by one, however the stream is split into reads, and then the
-// stream's end.
-func TestReadMessageSplits(t *testing.T) {
-	msgs := [][]byte{
-		seqMessage(0), seqMessage(1), seqMessage(127), seqMessage(128), seqMessage(1000),
-		{byte(Sequence), 0x82, 0x00, 0x03, 7, 8, 9}, // a length with a leading zero
-		seqMessage(rxBufSize - 4),                   // as long as the buffer
-	}
-	rng := rand.New(rand.NewPCG(58, 58))
-	for round := range 300 {
-		var want [][]byte
-		var stream []byte
-		for range 1 + rng.IntN(6) {
-			m := msgs[rng.IntN(len(msgs))]
-			want = append(want, m)
-			stream = append(stream, m...)
-		}
-		conn := &streamConn{}
-		for len(stream) > 0 {
-			n := 1 + rng.IntN(min(len(stream), []int{8, 300, 70000}[rng.IntN(3)]))
-			conn.reads = append(conn.reads, streamRead{data: stream[:n]})
-			stream = stream[n:]
-		}
-		rx := new(receiveBuffer)
-		for i, m := range want {
-			got, err := rx.readMessage(conn)
-			require.NoError(t, err, "round %d, message %d", round, i)
-			require.Equal(t, m, got, "round %d, message %d", round, i)
-		}
-		_, err := rx.readMessage(conn)
-		require.Equal(t, io.EOF, err, "round %d", round)
-	}
-}
-
-// TestReceiveStreamState checks what the receive buffer keeps of a TCP
-// stream: the octets after a message, for the next read on that connection
-// only; a read on another connection, or of a datagram, starts afresh.
-func TestReceiveStreamState(t *testing.T) {
-	msg := seqMessage(3)
-	tcpOn := func(conn net.Conn) *connection { return &connection{conn: conn, dial: dialSettings{network: "tcp"}} }
-	udpOn := func(conn net.Conn) *connection { return &connection{conn: conn, dial: dialSettings{network: "udp"}} }
-	a := &streamConn{reads: []streamRead{{data: slices.Concat(msg, msg[:2])}, {data: msg[2:]}}}
-	b := &streamConn{reads: []streamRead{{data: seqMessage(1)}, {data: slices.Concat(msg, msg[:2])}, {data: msg[2:]}, {data: seqMessage(1)}}}
-	rx := new(receiveBuffer)
-	var got []string
-	for _, c := range []*connection{tcpOn(a), tcpOn(b), tcpOn(a), tcpOn(b), udpOn(b), tcpOn(b)} {
-		got = append(got, describeRead(c.receive(rx)))
-	}
-	assert.Equal(t, []string{
-		"30 03 00 01 02", // a: the message; its next one starts
-		"30 01 00",       // b: a's octets are not read
-		"error: lost the message framing of the TCP stream: a message starts with 0x00, not a SEQUENCE", // a: its start is gone
-		"30 03 00 01 02", // b: the message; its next one starts
-		"00 01 02",       // b as a datagram: the next read, not the buffered start
-		"30 01 00",       // b: the start went with the datagram
-	}, got)
-}
-
-// TestReadMessageAllocs checks that reading a message from a TCP stream
-// allocates only the message's copy: every reply of a TCP request is read so.
-func TestReadMessageAllocs(t *testing.T) {
-	msg := seqMessage(3)
-	reads := make([]streamRead, 1)
-	conn := &streamConn{}
-	rx := new(receiveBuffer)
-	allocs := testing.AllocsPerRun(100, func() {
-		reads[0] = streamRead{data: msg}
-		conn.reads = reads
-		if _, err := rx.readMessage(conn); err != nil {
-			t.Fatal(err)
-		}
-	})
-	assert.Equal(t, 1.0, allocs)
 }

@@ -88,19 +88,15 @@ type pendingReply struct {
 }
 
 // fakeTransport is an in-memory connection to an engineAgent, shaped like a
-// TCP socket or a custom net.Conn; fakePacketTransport gives it the shape of a
-// UDP socket. A read takes from the earliest reply due: on the stream shape
-// what the buffer does not hold stays for the next read, as on a TCP socket
-// (which may also join replies in one read; scenarios space them apart), on
-// the UDP shape the rest is lost, as with a datagram. A read fails with
-// os.ErrDeadlineExceeded once the read deadline has passed: a reply due at
-// the deadline is not read, as on a real socket. A
+// custom net.Conn the caller sets, read with Read; fakePacketTransport gives it
+// the shape of the UDP socket Connect opens, read with ReadFrom. A read takes
+// the earliest reply due, as a datagram: what the buffer does not hold is
+// lost. A read fails with os.ErrDeadlineExceeded once the read deadline has
+// passed: a reply due at the deadline is not read, as on a real socket. A
 // write fails the same way once the write deadline has passed. Writes and
 // reads can be made to fail by number. A deadline set and a Close from another
 // goroutine wake a waiting read; after Close, reads, writes and deadlines fail
-// with net.ErrClosed, as on a socket. A TCP client opens a lost connection
-// again with a real dial, so those cases run on loopback sockets
-// (TestEngineTCPReconnect, TestEngineTCPLostConnection).
+// with net.ErrClosed, as on a socket.
 type fakeTransport struct {
 	tr    *engineTranscript
 	agent engineAgent
@@ -177,12 +173,11 @@ func (c *fakeTransport) write(b []byte, op string) (int, error) {
 }
 
 func (c *fakeTransport) Read(b []byte) (int, error) {
-	return c.read(b, "read", true)
+	return c.read(b, "read")
 }
 
-// read reads the earliest reply due into b, keeping what does not fit for the
-// next read when stream is set.
-func (c *fakeTransport) read(b []byte, op string, stream bool) (int, error) {
+// read reads the earliest reply due into b.
+func (c *fakeTransport) read(b []byte, op string) (int, error) {
 	c.mu.Lock()
 	c.reads++
 	n := c.reads
@@ -208,11 +203,7 @@ func (c *fakeTransport) read(b []byte, op string, stream bool) (int, error) {
 		if len(c.pending) > 0 && !c.pending[0].due.After(now) {
 			msg := c.pending[0].data
 			n := copy(b, msg)
-			if stream && n < len(msg) {
-				c.pending[0].data = msg[n:]
-			} else {
-				c.pending = c.pending[1:]
-			}
+			c.pending = c.pending[1:]
 			if c.tr != nil {
 				c.tr.addf("%s: %s", op, describeMessage(msg[:n]))
 			}
@@ -330,15 +321,14 @@ func (c *fakeTransport) RemoteAddr() net.Addr {
 	return &net.UDPAddr{IP: net.IPv4(127, 0, 0, 2), Port: 161}
 }
 
-// fakePacketTransport is a fakeTransport shaped like a UDP socket, connected
-// as Connect leaves it or unconnected: a net.PacketConn, which the engine reads
-// with ReadFrom.
+// fakePacketTransport is a fakeTransport shaped like the UDP socket Connect
+// opens: a net.PacketConn, which the engine reads with ReadFrom.
 type fakePacketTransport struct {
 	*fakeTransport
 }
 
 func (c fakePacketTransport) ReadFrom(b []byte) (int, net.Addr, error) {
-	n, err := c.read(b, fmt.Sprintf("read from %s", c.RemoteAddr()), false)
+	n, err := c.read(b, fmt.Sprintf("read from %s", c.RemoteAddr()))
 	return n, c.RemoteAddr(), err
 }
 
